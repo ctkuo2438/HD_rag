@@ -254,30 +254,64 @@ uv run ruff check .
 git status --short
 ```
 
-### Task 2: `.gitignore` and `.env.example`
+### Task 2: Dependencies, `.gitignore`, and `.env.example`
 
 Goal:
-Protect private and generated files, and document required environment variables.
+Add Phase 1 dependencies, protect private/generated files, and document required environment variables.
 
 Files touched:
+- `pyproject.toml`
+- `uv.lock`
 - `.gitignore`
 - `.env.example`
 
 Dependencies:
-- None
+- uv
+- Existing `pyproject.toml`
 
 Acceptance criteria:
-- `.gitignore` includes `.venv/`, `.env`, `data/pdfs/`, `storage/`, `__pycache__/`, and `.pytest_cache/`.
-- `.env.example` includes `OPENAI_API_KEY=`, `HD_RAG_PDF_DIR=data/pdfs`, `HD_RAG_CHROMA_DIR=storage/chroma`, `HD_RAG_COLLECTION=human_design`, and `HD_RAG_EMBED_MODEL=text-embedding-3-small`.
+- Runtime dependencies are installed:
+  - `llama-index`
+  - `llama-index-readers-file`
+  - `llama-index-embeddings-openai`
+  - `llama-index-vector-stores-chroma`
+  - `chromadb`
+  - `pymupdf`
+  - `python-dotenv`
+- Dev dependencies are installed:
+  - `pytest`
+  - `ruff`
+- `uv.lock` is created or updated and should be committed.
+- `.gitignore` includes:
+  - `.venv/`
+  - `.env`
+  - `data/pdfs/`
+  - `storage/`
+  - `__pycache__/`
+  - `.pytest_cache/`
+  - `.ruff_cache/`
+- `.env.example` includes:
+  - `OPENAI_API_KEY=`
+  - `HD_RAG_PDF_DIR=data/pdfs`
+  - `HD_RAG_CHROMA_DIR=storage/chroma`
+  - `HD_RAG_COLLECTION=human_design`
+  - `HD_RAG_EMBED_MODEL=text-embedding-3-small`
 - `.env`, PDFs, and Chroma storage are not committed.
+- No PDF ingestion code is implemented.
+- No OpenAI API calls are made.
+- No Chroma storage is created.
 
 Verification:
 
 ```sh
+uv run python -c "import llama_index; import chromadb; import fitz"
+uv run pytest
+uv run ruff check .
 test -f .env.example
 grep -q '^OPENAI_API_KEY=' .env.example
 grep -q '^HD_RAG_COLLECTION=human_design$' .env.example
 grep -q '^storage/$' .gitignore
+grep -q '^.ruff_cache/$' .gitignore
 git status --short
 ```
 

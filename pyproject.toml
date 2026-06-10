@@ -4,7 +4,15 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "chromadb>=1.5.9",
+    "llama-index>=0.14.22",
+    "llama-index-embeddings-openai>=0.6.0",
+    "llama-index-readers-file>=0.6.0",
+    "llama-index-vector-stores-chroma>=0.5.5",
+    "pymupdf>=1.27.2.3",
+    "python-dotenv>=1.2.2",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -12,3 +20,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/human_design"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.16",
+]
