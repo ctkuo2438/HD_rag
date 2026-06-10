@@ -331,16 +331,26 @@ Dependencies:
 Acceptance criteria:
 - `AppConfig` is a dataclass.
 - Config uses `pathlib.Path` for PDF and Chroma directories.
+- PDF directory defaults to `data/pdfs`.
+- Chroma directory defaults to `storage/chroma`.
 - Chroma collection name defaults to `human_design`.
 - Embedding model defaults to `text-embedding-3-small`.
 - Chunk settings default to `chunk_size=800` and `chunk_overlap=80`.
-- Tests do not require `.env` or OpenAI API access.
+- Config includes an `ingestion_version` default, for example `v1`.
+- Config loading can read from environment variables.
+- Config loading can optionally load `.env` when present.
+- Tests can pass explicit environment mappings or monkeypatch environment variables.
+- Tests do not require `.env`.
+- Tests do not require `OPENAI_API_KEY`.
+- Tests do not call OpenAI API.
+- No PDF ingestion, Chroma storage, or vector DB files are created.
 
 Verification:
 
 ```sh
 uv run pytest tests/test_config.py
 uv run ruff check .
+git status --short
 ```
 
 ### Task 4: Core dataclasses in `models.py`
