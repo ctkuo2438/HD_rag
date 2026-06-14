@@ -11,7 +11,8 @@ wheels/
 .env
 
 # Local data and generated storage
-data/pdfs/
+data/pdfs/*
+!data/pdfs/.gitkeep
 storage/
 
 # Python/test cache
