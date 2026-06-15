@@ -90,8 +90,8 @@ def build_text_extraction_report(
                 LowTextDocument(
                     source_path=_metadata_str(document, "source_path"),
                     file_name=_metadata_str(document, "file_name"),
-                    page_label=_metadata_str(document, "page_label"),
-                    page_number=_metadata_int(document, "page_number"),
+                    page_label=_metadata_str(document, "page_label") or _metadata_str(document, "source"),
+                    page_number=_metadata_int(document, "page_number") or _metadata_int(document, "source"),
                     text_length=text_length,
                 )
             )
