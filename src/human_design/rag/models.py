@@ -15,6 +15,26 @@ class PdfLoadResult:
 
 
 @dataclass(frozen=True)
+class LowTextDocument:
+    source_path: str | None
+    file_name: str | None
+    page_label: str | None
+    page_number: int | None
+    text_length: int
+
+
+@dataclass(frozen=True)
+class TextExtractionReport:
+    pdf_count: int
+    document_count: int
+    source_files: tuple[Path, ...]
+    total_text_characters: int
+    low_text_threshold: int
+    low_text_document_count: int
+    low_text_documents: tuple[LowTextDocument, ...]
+
+
+@dataclass(frozen=True)
 class ChunkingResult:
     document_count: int
     chunk_count: int
