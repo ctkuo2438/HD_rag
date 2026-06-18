@@ -15,6 +15,7 @@ def test_default_config_values_do_not_require_openai_key() -> None:
         chroma_dir=Path("storage/chroma"),
         collection_name="human_design",
         embedding_model="text-embedding-3-small",
+        openai_api_key=None,
         chunk_size=800,
         chunk_overlap=80,
         ingestion_version="v1",
@@ -45,6 +46,12 @@ def test_name_and_model_environment_overrides() -> None:
     assert config.embedding_model == "custom-embedding-model"
 
 
+def test_load_config_reads_openai_api_key_from_explicit_env() -> None:
+    config = load_config(env={"OPENAI_API_KEY": "env-api-key"})
+
+    assert config.openai_api_key == "env-api-key"
+
+
 def test_chunk_environment_overrides() -> None:
     config = load_config(
         env={
@@ -72,6 +79,7 @@ def test_load_config_can_read_explicit_env_file(tmp_path: Path) -> None:
                 "HD_RAG_CHROMA_DIR=env-file/chroma",
                 "HD_RAG_COLLECTION=env_file_collection",
                 "HD_RAG_EMBED_MODEL=env-file-model",
+                "OPENAI_API_KEY=env-file-api-key",
                 "HD_RAG_CHUNK_SIZE=900",
                 "HD_RAG_CHUNK_OVERLAP=90",
                 "HD_RAG_INGESTION_VERSION=env-file-v1",
@@ -86,6 +94,7 @@ def test_load_config_can_read_explicit_env_file(tmp_path: Path) -> None:
     assert config.chroma_dir == Path("env-file/chroma")
     assert config.collection_name == "env_file_collection"
     assert config.embedding_model == "env-file-model"
+    assert config.openai_api_key == "env-file-api-key"
     assert config.chunk_size == 900
     assert config.chunk_overlap == 90
     assert config.ingestion_version == "env-file-v1"
