@@ -18,15 +18,25 @@ DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 80
 DEFAULT_INGESTION_VERSION = "v1"
 
-# if these variables (HD_RAG_PDF_DIR, HD_RAG_CHROMA_DIR ...)are set in .env, they will override the defaults
+# Environment variable names recognized by load_config().
+#
+# Precedence order:
+# explicit env / shell environment > .env file > defaults
+#
+# In my local .env, these variables are currently set, so load_config()
+# will use the .env values unless they are overridden by shell environment variables.
 ENV_PDF_DIR = "HD_RAG_PDF_DIR"
 ENV_CHROMA_DIR = "HD_RAG_CHROMA_DIR"
 ENV_COLLECTION = "HD_RAG_COLLECTION"
 ENV_EMBED_MODEL = "HD_RAG_EMBED_MODEL"
+ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
+
+# In my local .env, these variables are currently not set, so load_config()
+# will use DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, and DEFAULT_INGESTION_VERSION
+# unless they are later set in .env or overridden by shell environment variables.
 ENV_CHUNK_SIZE = "HD_RAG_CHUNK_SIZE"
 ENV_CHUNK_OVERLAP = "HD_RAG_CHUNK_OVERLAP"
 ENV_INGESTION_VERSION = "HD_RAG_INGESTION_VERSION"
-ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
 
 
 @dataclass(frozen=True)
