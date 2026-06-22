@@ -70,9 +70,8 @@ def main() -> None:
         embedding_model=config.embedding_model,
     )
     # step 6, create a LlamaIndex StorageContext
-    # put LlamaIndex Chroma wrapper (ChromaVectorStore) into LlamaIndex's storage system
+    # tell LlamaIndex: when the VectorStoreIndex needs to store the vectors, please store them in this ChromaVectorStore
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    # step 7 embed + persist
     VectorStoreIndex(
         nodes,
         storage_context=storage_context,
