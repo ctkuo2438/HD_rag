@@ -27,6 +27,7 @@ def _fake_config(tmp_path: Path) -> SimpleNamespace:
         chroma_dir=tmp_path / "chroma",
         collection_name="human_design_test",
         embedding_model="text-embedding-3-small",
+        openai_api_key="test-api-key",
         chunk_size=800,
         chunk_overlap=80,
         ingestion_version="v1",

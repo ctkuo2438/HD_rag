@@ -152,9 +152,11 @@ def test_models_are_immutable() -> None:
 
 
 def test_models_do_not_require_openai_key_or_create_storage(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     PdfLoadResult(pdf_count=0, document_count=0, source_files=())
     VectorStoreResult(
