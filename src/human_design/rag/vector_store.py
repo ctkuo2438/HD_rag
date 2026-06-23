@@ -43,6 +43,7 @@ def create_chroma_vector_store(
     collection = get_or_create_chroma_collection(client, collection_name)
     if embedding_model is not None:
         ensure_collection_embedding_model(collection, embedding_model)
+    # I have a Chroma collection, wrap it into a vector store that LlamaIndex can work with
     return ChromaVectorStore(chroma_collection=collection)
 
 

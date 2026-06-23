@@ -64,6 +64,7 @@ def main() -> None:
     # step 4 from embeddings.py
     embed_model = create_openai_embedding_model_from_config(config)
     # step 5 from vector_store.py, get LlamaIndex ChromaVectorStore adapter
+    # ChromaVectorStore = LlamaIndex adapter for Chroma DB
     vector_store: ChromaVectorStore = create_chroma_vector_store(
         chroma_dir=config.chroma_dir,
         collection_name=config.collection_name,
@@ -72,6 +73,7 @@ def main() -> None:
     # step 6, create a LlamaIndex StorageContext
     # tell LlamaIndex: when the VectorStoreIndex needs to store the vectors, please store them in this ChromaVectorStore
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
+    # VectorStoreIndex = LlamaIndex's index / retrieval abstraction
     VectorStoreIndex(
         nodes,
         storage_context=storage_context,
