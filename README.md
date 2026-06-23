@@ -101,7 +101,7 @@ Do not run real ingestion as part of default tests or routine offline verificati
 After manual ingestion has created an existing Chroma store, run:
 
 ```sh
-uv run python scripts/query_kb.py "What is a Generator type?"
+HD_RAG_REAL_EMBEDDINGS=1 uv run python scripts/query_kb.py "What is a Generator type?"
 ```
 
-This may call OpenAI for the query embedding. It reloads the existing Chroma collection, retrieves top matching chunks with source metadata, and does not generate final LLM answers.
+This is manual and opt-in because it may call OpenAI for the query embedding. It reloads the existing Chroma collection, retrieves top matching chunks with source metadata, and does not generate final LLM answers.

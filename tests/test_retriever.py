@@ -235,12 +235,23 @@ def test_query_script_requires_query_argument(
     assert "usage:" in capsys.readouterr().err
 
 
+def test_query_script_requires_real_retrieval_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    query_script = _load_query_script()
+    monkeypatch.delenv("HD_RAG_REAL_EMBEDDINGS", raising=False)
+
+    with pytest.raises(SystemExit, match="Real retrieval is disabled"):
+        query_script.main(["Generator"])
+
+
 def test_query_script_passes_query_and_top_k_to_retriever(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
     calls: list[str] = []
 
     class FakeRetriever:
@@ -274,6 +285,7 @@ def test_query_script_prints_rank_snippet_score_and_metadata(
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
     long_text = "A" * 520 + "FULL_CHUNK_TAIL"
 
     class FakeNode:
@@ -318,6 +330,7 @@ def test_query_script_truncates_long_chunks_by_default(
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
     long_text = "x" * 520 + "TAIL_SHOULD_NOT_PRINT"
 
     class FakeRetriever:
@@ -346,6 +359,7 @@ def test_query_script_prints_clear_message_when_no_results(
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
 
     class FakeRetriever:
         def retrieve(self, query: str) -> list[object]:
@@ -369,6 +383,7 @@ def test_query_script_shows_clear_message_when_retriever_setup_fails(
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
     monkeypatch.setattr(query_script, "load_config", lambda: config)
     monkeypatch.setattr(
         query_script,
@@ -388,6 +403,7 @@ def test_query_script_does_not_load_pdfs_or_chunk_documents(
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
 
     from human_design.rag import chunking, ingestion
 
@@ -416,6 +432,7 @@ def test_query_script_does_not_require_openai_key_or_create_storage(
 ) -> None:
     query_script = _load_query_script()
     config = _config(tmp_path)
+    monkeypatch.setenv("HD_RAG_REAL_EMBEDDINGS", "1")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(query_script, "load_config", lambda: config)

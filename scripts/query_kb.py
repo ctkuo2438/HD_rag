@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
 from typing import Any
 
@@ -10,13 +11,24 @@ from human_design.rag.config import load_config
 from human_design.rag.retriever import create_retriever_from_config
 
 
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 3
 DEFAULT_SNIPPET_CHARS = 500
+REAL_EMBEDDINGS_ENV_VAR = "HD_RAG_REAL_EMBEDDINGS"
+RETRIEVAL_DISABLED_MESSAGE = (
+    "Real retrieval is disabled by default. "
+    "Set HD_RAG_REAL_EMBEDDINGS=1 to run query retrieval."
+)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Run a retrieval smoke test against an existing Chroma collection."""
+    """
+    Run a retrieval smoke test against an existing Chroma collection.
+    """
     args = _parse_args(argv)
+
+    if os.environ.get(REAL_EMBEDDINGS_ENV_VAR) != "1":
+        raise SystemExit(RETRIEVAL_DISABLED_MESSAGE)
+
     query = " ".join(args.query)
 
     try:
