@@ -93,7 +93,11 @@ def test_main_runs_pipeline_when_real_embeddings_enabled(
     monkeypatch.setattr(
         ingest_script,
         "build_text_extraction_report",
-        lambda pdf_dir: calls.append(f"build_text_extraction_report:{pdf_dir}")
+        lambda pdf_dir, **kwargs: calls.append(
+            "build_text_extraction_report:"
+            f"{pdf_dir}:"
+            f"{kwargs['documents'] is documents}"
+        )
         or _fake_report(tmp_path),
     )
     monkeypatch.setattr(
@@ -160,7 +164,7 @@ def test_main_runs_pipeline_when_real_embeddings_enabled(
     assert calls == [
         "load_config",
         f"load_pdfs:{config.pdf_dir}",
-        f"build_text_extraction_report:{config.pdf_dir}",
+        f"build_text_extraction_report:{config.pdf_dir}:True",
         "chunk_documents:800:80:text-embedding-3-small:v1",
         "create_openai_embedding_model_from_config:text-embedding-3-small",
         f"create_chroma_vector_store:{config.chroma_dir}:human_design_test:text-embedding-3-small",

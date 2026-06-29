@@ -209,6 +209,63 @@ def test_build_text_extraction_report_returns_report_with_counts(
     assert report.low_text_threshold == 5
 
 
+def test_build_text_extraction_report_reuses_preloaded_documents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    first = pdf_dir / "a.pdf"
+    second = pdf_dir / "b.pdf"
+    first.touch()
+    second.touch()
+    documents = [
+        Document(
+            text="enough text",
+            metadata={
+                "source_path": str(first),
+                "file_name": "a.pdf",
+                "page_label": "1",
+                "page_number": 1,
+            },
+        ),
+        Document(
+            text="few",
+            metadata={
+                "source_path": str(second),
+                "file_name": "b.pdf",
+                "source": "2",
+            },
+        ),
+    ]
+    original_metadata = [dict(document.metadata) for document in documents]
+
+    def fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError("preloaded report must not load PDFs")
+
+    monkeypatch.setattr(ingestion, "load_pdf", fail_if_called)
+    monkeypatch.setattr(ingestion, "load_pdfs", fail_if_called)
+    monkeypatch.setattr(ingestion, "PyMuPDFReader", fail_if_called)
+
+    report = ingestion.build_text_extraction_report(
+        pdf_dir,
+        low_text_threshold=5,
+        documents=documents,
+    )
+
+    assert report.pdf_count == 2
+    assert report.document_count == 2
+    assert report.source_files == (first, second)
+    assert report.total_text_characters == len("enough text") + len("few")
+    assert report.low_text_document_count == 1
+    [low_text_document] = report.low_text_documents
+    assert low_text_document.source_path == str(second)
+    assert low_text_document.file_name == "b.pdf"
+    assert low_text_document.page_label == "2"
+    assert low_text_document.page_number == 2
+    assert [dict(document.metadata) for document in documents] == original_metadata
+
+
 def test_build_text_extraction_report_detects_low_text_documents_with_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

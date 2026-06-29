@@ -8,7 +8,7 @@ from llama_index.core import VectorStoreIndex
 
 from human_design.rag.config import AppConfig
 from human_design.rag.embeddings import create_openai_embedding_model_from_config
-from human_design.rag.vector_store import create_chroma_vector_store
+from human_design.rag.vector_store import open_existing_chroma_vector_store
 
 
 def load_existing_chroma_index(config: AppConfig) -> VectorStoreIndex:
@@ -16,7 +16,7 @@ def load_existing_chroma_index(config: AppConfig) -> VectorStoreIndex:
     Load an existing Chroma-backed index without re-ingesting documents.
     """
     try:
-        vector_store = create_chroma_vector_store(
+        vector_store = open_existing_chroma_vector_store(
             chroma_dir=config.chroma_dir,
             collection_name=config.collection_name,
             embedding_model=config.embedding_model,

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import chromadb
+from chromadb.errors import NotFoundError
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from human_design.rag.config import DEFAULT_CHROMA_DIR, DEFAULT_COLLECTION_NAME
@@ -44,6 +45,35 @@ def create_chroma_vector_store(
     if embedding_model is not None:
         ensure_collection_embedding_model(collection, embedding_model)
     # I have a Chroma collection, wrap it into a vector store that LlamaIndex can work with
+    return ChromaVectorStore(chroma_collection=collection)
+
+
+def open_existing_chroma_vector_store(
+    chroma_dir: Path,
+    collection_name: str,
+    embedding_model: str,
+) -> ChromaVectorStore:
+    """
+    Open an existing non-empty Chroma collection for read-only retrieval.
+    """
+    if not chroma_dir.exists():
+        raise ValueError(f"Chroma directory not found: {chroma_dir}. Run ingestion first.")
+    if not chroma_dir.is_dir():
+        raise ValueError(f"Chroma path is not a directory: {chroma_dir}")
+
+    client = create_chroma_client(chroma_dir)
+    try:
+        collection = client.get_collection(name=collection_name)
+    except NotFoundError as exc:
+        raise ValueError(
+            f"Chroma collection not found: {collection_name!r}. Run or rebuild ingestion."
+        ) from exc
+
+    if collection.count() == 0:
+        raise ValueError(
+            f"Chroma collection is empty: {collection_name!r}. Run or rebuild ingestion."
+        )
+    ensure_collection_embedding_model(collection, embedding_model)
     return ChromaVectorStore(chroma_collection=collection)
 
 

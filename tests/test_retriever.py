@@ -32,14 +32,14 @@ def _config(tmp_path: Path):
     )
 
 
-def test_load_existing_chroma_index_uses_config_values(
+def test_load_existing_chroma_index_uses_read_only_vector_store(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
     calls: list[str] = []
 
-    def fake_create_chroma_vector_store(**kwargs: object) -> str:
+    def fake_open_existing_chroma_vector_store(**kwargs: object) -> str:
         calls.append(
             "vector_store:"
             f"{kwargs['chroma_dir']}:"
@@ -67,7 +67,11 @@ def test_load_existing_chroma_index_uses_config_values(
         def __init__(self, *args: object, **kwargs: object) -> None:
             raise AssertionError("retriever reload must not construct an index from nodes")
 
-    monkeypatch.setattr(retriever, "create_chroma_vector_store", fake_create_chroma_vector_store)
+    monkeypatch.setattr(
+        retriever,
+        "open_existing_chroma_vector_store",
+        fake_open_existing_chroma_vector_store,
+    )
     monkeypatch.setattr(
         retriever,
         "create_openai_embedding_model_from_config",
@@ -112,10 +116,14 @@ def test_embedding_model_mismatch_raises_rebuild_message(
 ) -> None:
     config = _config(tmp_path)
 
-    def fake_create_chroma_vector_store(**kwargs: object) -> object:
+    def fake_open_existing_chroma_vector_store(**kwargs: object) -> object:
         raise ValueError("Embedding model mismatch")
 
-    monkeypatch.setattr(retriever, "create_chroma_vector_store", fake_create_chroma_vector_store)
+    monkeypatch.setattr(
+        retriever,
+        "open_existing_chroma_vector_store",
+        fake_open_existing_chroma_vector_store,
+    )
 
     with pytest.raises(ValueError, match="rebuild the Chroma collection"):
         retriever.load_existing_chroma_index(config)
@@ -136,7 +144,11 @@ def test_retriever_does_not_load_pdfs_or_chunk_documents(
     monkeypatch.setattr(ingestion, "load_pdfs", fail_if_called)
     monkeypatch.setattr(ingestion, "build_text_extraction_report", fail_if_called)
     monkeypatch.setattr(chunking, "chunk_documents", fail_if_called)
-    monkeypatch.setattr(retriever, "create_chroma_vector_store", lambda **kwargs: "vector-store")
+    monkeypatch.setattr(
+        retriever,
+        "open_existing_chroma_vector_store",
+        lambda **kwargs: "vector-store",
+    )
     monkeypatch.setattr(
         retriever,
         "create_openai_embedding_model_from_config",
@@ -168,7 +180,11 @@ def test_retriever_default_tests_do_not_require_openai_api_key_or_storage(
     config = _config(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(retriever, "create_chroma_vector_store", lambda **kwargs: "vector-store")
+    monkeypatch.setattr(
+        retriever,
+        "open_existing_chroma_vector_store",
+        lambda **kwargs: "vector-store",
+    )
     monkeypatch.setattr(
         retriever,
         "create_openai_embedding_model_from_config",
@@ -196,7 +212,11 @@ def test_retriever_does_not_append_or_delete_vectors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
-    monkeypatch.setattr(retriever, "create_chroma_vector_store", lambda **kwargs: "vector-store")
+    monkeypatch.setattr(
+        retriever,
+        "open_existing_chroma_vector_store",
+        lambda **kwargs: "vector-store",
+    )
     monkeypatch.setattr(
         retriever,
         "create_openai_embedding_model_from_config",

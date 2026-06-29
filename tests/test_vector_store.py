@@ -60,6 +60,146 @@ def test_create_chroma_vector_store_returns_llamaindex_chroma_vector_store(
     assert isinstance(chroma_store, ChromaVectorStore)
 
 
+def test_create_chroma_vector_store_can_create_missing_collection(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "chroma"
+
+    chroma_store = vector_store.create_chroma_vector_store(
+        chroma_dir=chroma_dir,
+        collection_name="created_by_ingestion",
+        embedding_model="model-a",
+    )
+    client = vector_store.create_chroma_client(chroma_dir)
+    collection = client.get_collection("created_by_ingestion")
+
+    assert isinstance(chroma_store, ChromaVectorStore)
+    assert collection.name == "created_by_ingestion"
+
+
+def test_open_existing_chroma_vector_store_opens_non_empty_collection(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "chroma"
+    client = vector_store.create_chroma_client(chroma_dir)
+    collection = client.get_or_create_collection(
+        name="existing",
+        metadata={vector_store.EMBEDDING_MODEL_METADATA_KEY: "model-a"},
+    )
+    collection.add(
+        ids=["test-id"],
+        embeddings=[[0.1, 0.2, 0.3]],
+        documents=["test document"],
+        metadatas=[{"source_file": "test.pdf"}],
+    )
+
+    chroma_store = vector_store.open_existing_chroma_vector_store(
+        chroma_dir=chroma_dir,
+        collection_name="existing",
+        embedding_model="model-a",
+    )
+
+    assert isinstance(chroma_store, ChromaVectorStore)
+    assert collection.count() == 1
+    assert collection.metadata == {vector_store.EMBEDDING_MODEL_METADATA_KEY: "model-a"}
+
+
+def test_open_existing_chroma_vector_store_does_not_create_missing_directory(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "missing_chroma"
+
+    with pytest.raises(ValueError, match="Chroma directory not found"):
+        vector_store.open_existing_chroma_vector_store(
+            chroma_dir=chroma_dir,
+            collection_name="missing",
+            embedding_model="model-a",
+        )
+
+    assert not chroma_dir.exists()
+
+
+def test_open_existing_chroma_vector_store_raises_when_collection_missing(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "chroma"
+    vector_store.create_chroma_client(chroma_dir)
+
+    with pytest.raises(ValueError, match="Chroma collection not found"):
+        vector_store.open_existing_chroma_vector_store(
+            chroma_dir=chroma_dir,
+            collection_name="missing_collection",
+            embedding_model="model-a",
+        )
+
+
+def test_open_existing_chroma_vector_store_raises_when_collection_empty(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "chroma"
+    client = vector_store.create_chroma_client(chroma_dir)
+    client.get_or_create_collection(
+        name="empty",
+        metadata={vector_store.EMBEDDING_MODEL_METADATA_KEY: "model-a"},
+    )
+
+    with pytest.raises(ValueError, match="empty"):
+        vector_store.open_existing_chroma_vector_store(
+            chroma_dir=chroma_dir,
+            collection_name="empty",
+            embedding_model="model-a",
+        )
+
+
+def test_open_existing_chroma_vector_store_rejects_unknown_embedding_metadata(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "chroma"
+    client = vector_store.create_chroma_client(chroma_dir)
+    collection = client.get_or_create_collection(name="unknown_model")
+    collection.add(
+        ids=["test-id"],
+        embeddings=[[0.1, 0.2, 0.3]],
+        documents=["test document"],
+        metadatas=[{"source_file": "test.pdf"}],
+    )
+
+    with pytest.raises(ValueError, match="unknown embedding model"):
+        vector_store.open_existing_chroma_vector_store(
+            chroma_dir=chroma_dir,
+            collection_name="unknown_model",
+            embedding_model="model-a",
+        )
+
+    assert collection.metadata is None
+
+
+def test_open_existing_chroma_vector_store_rejects_mismatched_embedding_metadata(
+    tmp_path: Path,
+) -> None:
+    chroma_dir = tmp_path / "chroma"
+    client = vector_store.create_chroma_client(chroma_dir)
+    collection = client.get_or_create_collection(
+        name="mismatched",
+        metadata={vector_store.EMBEDDING_MODEL_METADATA_KEY: "model-a"},
+    )
+    collection.add(
+        ids=["test-id"],
+        embeddings=[[0.1, 0.2, 0.3]],
+        documents=["test document"],
+        metadatas=[{"source_file": "test.pdf"}],
+    )
+
+    with pytest.raises(ValueError, match="Embedding model mismatch"):
+        vector_store.open_existing_chroma_vector_store(
+            chroma_dir=chroma_dir,
+            collection_name="mismatched",
+            embedding_model="model-b",
+        )
+
+    assert collection.metadata == {vector_store.EMBEDDING_MODEL_METADATA_KEY: "model-a"}
+
+
 def test_empty_collection_records_embedding_model_metadata(tmp_path: Path) -> None:
     client = vector_store.create_chroma_client(tmp_path / "chroma")
     collection = vector_store.get_or_create_chroma_collection(client, "empty_metadata")

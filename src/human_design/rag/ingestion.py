@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from llama_index.core import Document
@@ -68,18 +69,25 @@ def load_pdfs(pdf_dir: Path = DEFAULT_PDF_DIR) -> list[Document]:
 def build_text_extraction_report(
     pdf_dir: Path = DEFAULT_PDF_DIR,
     low_text_threshold: int = 100,
+    *,
+    documents: Sequence[Document] | None = None,
 ) -> TextExtractionReport:
     """
     Build an in-memory report for embedded text extracted from local PDFs.
     """
     pdf_paths = discover_pdfs(pdf_dir)
-    documents: list[Document] = []
-    for pdf_path in pdf_paths:
-        documents.extend(load_pdf(pdf_path))
+    report_documents: Sequence[Document]
+    if documents is None:
+        loaded_documents: list[Document] = []
+        for pdf_path in pdf_paths:
+            loaded_documents.extend(load_pdf(pdf_path))
+        report_documents = loaded_documents
+    else:
+        report_documents = documents
 
     total_text_characters = 0
     low_text_documents: list[LowTextDocument] = []
-    for document in documents:
+    for document in report_documents:
         text = document.text or ""
         stripped_text = text.strip() # only non-whitespace characters
         text_length = len(stripped_text) # character count, not token count
@@ -98,7 +106,7 @@ def build_text_extraction_report(
 
     return TextExtractionReport(
         pdf_count=len(pdf_paths),
-        document_count=len(documents),
+        document_count=len(report_documents),
         source_files=tuple(pdf_paths),
         total_text_characters=total_text_characters,
         low_text_threshold=low_text_threshold,

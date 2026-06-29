@@ -49,7 +49,10 @@ def main() -> None:
             raise SystemExit("OPENAI_API_KEY is not set. Please set it in your environment or .env file.")
         
         documents = load_pdfs(config.pdf_dir) # step 1 from ingestion.py
-        extraction_report = build_text_extraction_report(config.pdf_dir) # step 2 from ingestion.py
+        extraction_report = build_text_extraction_report(
+            config.pdf_dir,
+            documents=documents,
+        ) # step 2 from ingestion.py
     except NoPdfFilesFoundError as exc:
         raise SystemExit(str(exc)) from exc
 
