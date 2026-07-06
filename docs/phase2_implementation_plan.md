@@ -734,6 +734,8 @@ Use connected components to derive:
 4 components -> Quadruple Split Definition
 ```
 
+Phase 2 v1 intentionally uses this coarse connected-component taxonomy. `Split Definition` is the Phase 2 v1 output for any chart with exactly two disconnected derived components. Phase 2 v1 does not distinguish `Simple-Split Definition` from `Wide-Split Definition`; that finer distinction depends on bridge-specific analysis and is intentionally out of scope for this phase. The current connected-component output is a coarse deterministic classification, not a complete reproduction of every Human Design definition subtype.
+
 ### Type
 
 Use deterministic rules based on `derived_chart_data.defined_centers` and `active_channels`.
@@ -757,7 +759,7 @@ Motor centers:
 - Solar Plexus
 - Ego
 
-Motor-to-Throat connection must be determined through active channels and connected paths between derived centers and Throat, not by direct visual guessing.
+For Phase 2 v1, a motor-to-Throat connection exists only when at least one directly active canonical channel has `Throat` as one endpoint and one motor center (`Root`, `Sacral`, `Solar Plexus`, or `Ego`) as the other endpoint. Graph connectivity may still be used for Definition, but a multi-hop path through intermediate centers must not by itself qualify as a motor-to-Throat connection for Type classification. A Sacral-defined chart is a Manifesting Generator only when it has this direct active motor-to-Throat channel; without one, it is a Generator. A Sacral-undefined chart with such a direct channel is a Manifestor, subject to the remaining Type rules above.
 
 ### Authority
 
@@ -1488,8 +1490,12 @@ Acceptance criteria:
 - `derived_chart_data.defined_centers` equals the canonical-order union of all endpoint centers from `active_channels`.
 - Type, authority, definition, strategy, not_self_theme, and signature use derived chart data, not raw visual center observations.
 - Profile is derived from Personality Sun line and Design Sun line.
-- Definition is derived using connected components over `derived_chart_data.defined_centers` and active channels.
-- Type mapping logic exists.
+- Definition is derived using the Phase 2 v1 coarse connected-component taxonomy over `derived_chart_data.defined_centers` and active channels.
+- Exactly two disconnected derived components produce `Split Definition`; Phase 2 v1 does not distinguish `Simple-Split Definition` from `Wide-Split Definition` and does not implement bridge-gate analysis.
+- Type mapping logic requires a directly active canonical motor-to-Throat channel for Manifesting Generator or Manifestor classification.
+- Multi-hop graph connectivity through intermediate centers does not by itself qualify as a motor-to-Throat connection for Type classification.
+- A Sacral-defined chart with a direct active motor-to-Throat channel is a Manifesting Generator; without one, it is a Generator.
+- A Sacral-undefined chart with a direct active motor-to-Throat channel is a Manifestor, subject to the remaining Type rules.
 - Authority priority logic exists.
 - Strategy, not_self_theme, and signature are derived from type.
 - Unsupported authority edge cases return `Unknown` or `Needs Review` with warnings rather than hallucinating.
@@ -1504,6 +1510,9 @@ Acceptance criteria:
   - Single Definition
   - Split Definition
   - No Definition
+  - exactly two disconnected derived components produce the coarse Phase 2 v1 `Split Definition` output without Simple-Split versus Wide-Split classification
+  - a direct active motor-to-Throat channel qualifies for Manifesting Generator or Manifestor classification under the remaining Type rules
+  - a multi-hop active-channel path ending at `Throat`, such as `2-14` plus `1-8`, does not qualify by itself as a motor-to-Throat connection
   - profile derivation such as `61.4` + `32.6` -> `4/6`
   - gate derivation from planetary columns
   - channel derivation such as gates `3` and `60` -> `3-60`
@@ -1536,8 +1545,10 @@ Testing requirements:
 - Constants tests from Task 16A should verify `ALL_CHANNELS` has exactly 36 channels.
 - Tests should verify derived active channels can only come from `ALL_CHANNELS`.
 - Tests should verify derived defined centers equal the canonical-order union of active channel endpoint centers.
-- Tests should cover graph connected components for definition.
-- Tests should cover motor-to-Throat path logic through active channels and derived defined centers.
+- Tests should cover graph connected components for the coarse Phase 2 v1 Definition taxonomy, including exactly two disconnected components producing `Split Definition`.
+- Tests should not add `Wide-Split Definition` output or bridge-gate logic.
+- Tests should cover direct active canonical motor-to-Throat channel logic for Type classification.
+- Tests should distinguish a qualifying direct active motor-to-Throat channel from a non-qualifying multi-hop graph path ending at `Throat`.
 - Tests should cover unsupported authority warnings.
 - Tests should not use an LLM or require API keys.
 
