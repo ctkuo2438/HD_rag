@@ -1,0 +1,335 @@
+{
+  "schema_version": "phase2_golden_labels_v1",
+  "documentation": {
+    "purpose": "Synthetic, safe-to-commit example golden labels for offline BodyGraph extraction evaluation.",
+    "privacy": "These cases are mock labels only and must not contain private chart images or real private Vision responses.",
+    "evaluation_scope": {
+      "full_derived_chart": "Use when all 26 Personality and Design planetary activations are manually verified and derived-chart metrics may be included.",
+      "raw_visual_evidence_only": "Use when planetary source data is unavailable or incomplete; derived-chart metrics must be excluded."
+    },
+    "missing_activation_representation": "Unavailable activation values must be present as null, never omitted or represented as empty strings, false, zero, or empty objects.",
+    "image_fixture": "test1.png is a tiny synthetic PNG fixture used only for offline structural tests."
+  },
+  "recommended_sample_coverage": {
+    "chart_types": [
+      "Generator",
+      "Manifesting Generator",
+      "Projector",
+      "Manifestor",
+      "Reflector"
+    ],
+    "reflector_guidance": "Include extra Reflector examples because Vision models often misread Reflector-like charts.",
+    "notes": "Future local evaluation sets should include non-private or explicitly permitted examples for each listed chart type."
+  },
+  "cases": [
+    {
+      "case_id": "synthetic_full_001",
+      "image_filename": "test1.png",
+      "label_source": "synthetic_mock",
+      "notes": "Full derived-evaluation mock case with all 26 planetary activations populated.",
+      "evaluation_scope": {
+        "mode": "full_derived_chart",
+        "include_derived_metrics": true,
+        "include_raw_visual_metrics": true,
+        "reason": "All 26 planetary activations are manually verified."
+      },
+      "expected_raw_labels": {
+        "personality": {
+          "sun": "61.4",
+          "earth": "62.4",
+          "north_node": "10.2",
+          "south_node": "15.2",
+          "moon": "34.1",
+          "mercury": "20.3",
+          "venus": "57.5",
+          "mars": "3.1",
+          "jupiter": "60.1",
+          "saturn": "14.6",
+          "uranus": "2.6",
+          "neptune": "45.2",
+          "pluto": "21.2"
+        },
+        "design": {
+          "sun": "32.6",
+          "earth": "42.6",
+          "north_node": "5.1",
+          "south_node": "35.1",
+          "moon": "10.4",
+          "mercury": "34.4",
+          "venus": "60.2",
+          "mars": "3.2",
+          "jupiter": "20.1",
+          "saturn": "57.1",
+          "uranus": "14.3",
+          "neptune": "2.3",
+          "pluto": "45.5"
+        },
+        "visually_active_gates": [
+          2,
+          3,
+          5,
+          10,
+          14,
+          15,
+          20,
+          21,
+          32,
+          34,
+          35,
+          42,
+          45,
+          57,
+          60,
+          61,
+          62
+        ],
+        "visually_defined_centers": [
+          "Ajna",
+          "Head",
+          "Throat",
+          "G",
+          "Ego",
+          "Sacral",
+          "Spleen",
+          "Root"
+        ],
+        "visually_undefined_centers": [
+          "Solar Plexus"
+        ],
+        "visible_colored_channels": [
+          "2-14",
+          "3-60",
+          "5-15",
+          "10-34",
+          "10-57",
+          "20-34",
+          "20-57",
+          "21-45"
+        ],
+        "confidence": {
+          "personality": {
+            "sun": 1.0,
+            "earth": 1.0,
+            "north_node": 1.0,
+            "south_node": 1.0,
+            "moon": 1.0,
+            "mercury": 1.0,
+            "venus": 1.0,
+            "mars": 1.0,
+            "jupiter": 1.0,
+            "saturn": 1.0,
+            "uranus": 1.0,
+            "neptune": 1.0,
+            "pluto": 1.0
+          },
+          "design": {
+            "sun": 1.0,
+            "earth": 1.0,
+            "north_node": 1.0,
+            "south_node": 1.0,
+            "moon": 1.0,
+            "mercury": 1.0,
+            "venus": 1.0,
+            "mars": 1.0,
+            "jupiter": 1.0,
+            "saturn": 1.0,
+            "uranus": 1.0,
+            "neptune": 1.0,
+            "pluto": 1.0
+          },
+          "visually_defined_centers": 1.0,
+          "visually_undefined_centers": 1.0,
+          "visually_active_gates": 1.0,
+          "visible_colored_channels": 1.0
+        },
+        "uncertain_items": []
+      },
+      "expected_derived_labels": {
+        "active_gates": [
+          2,
+          3,
+          5,
+          10,
+          14,
+          15,
+          20,
+          21,
+          32,
+          34,
+          35,
+          42,
+          45,
+          57,
+          60,
+          61,
+          62
+        ],
+        "active_channels": [
+          "2-14",
+          "3-60",
+          "5-15",
+          "10-34",
+          "10-57",
+          "20-34",
+          "20-57",
+          "21-45"
+        ],
+        "defined_centers": [
+          "Ajna",
+          "Head",
+          "Throat",
+          "G",
+          "Ego",
+          "Sacral",
+          "Spleen",
+          "Root"
+        ],
+        "type": "Manifesting Generator",
+        "authority": "Sacral",
+        "profile": "4/6",
+        "definition": "Single Definition",
+        "strategy": "To Respond",
+        "not_self_theme": "Frustration",
+        "signature": "Satisfaction"
+      },
+      "expected_validation_result": {
+        "is_valid": true,
+        "warnings": []
+      },
+      "expected_warning_codes": []
+    },
+    {
+      "case_id": "synthetic_partial_001",
+      "image_filename": "test1.png",
+      "label_source": "synthetic_mock_partial",
+      "notes": "Partial raw visual-evidence-only mock case. Some non-Sun activations are unavailable, so derived chart metrics are excluded.",
+      "evaluation_scope": {
+        "mode": "raw_visual_evidence_only",
+        "include_derived_metrics": false,
+        "include_raw_visual_metrics": true,
+        "reason": "Planetary source data is unavailable, so derived chart metrics are excluded."
+      },
+      "expected_raw_labels": {
+        "personality": {
+          "sun": "61.4",
+          "earth": "62.4",
+          "north_node": null,
+          "south_node": "15.2",
+          "moon": null,
+          "mercury": "20.3",
+          "venus": "57.5",
+          "mars": null,
+          "jupiter": "60.1",
+          "saturn": "14.6",
+          "uranus": "2.6",
+          "neptune": "45.2",
+          "pluto": "21.2"
+        },
+        "design": {
+          "sun": "32.6",
+          "earth": "42.6",
+          "north_node": "5.1",
+          "south_node": null,
+          "moon": "10.4",
+          "mercury": null,
+          "venus": "60.2",
+          "mars": "3.2",
+          "jupiter": "20.1",
+          "saturn": "57.1",
+          "uranus": "14.3",
+          "neptune": "2.3",
+          "pluto": "45.5"
+        },
+        "visually_active_gates": [
+          10,
+          20,
+          34,
+          57
+        ],
+        "visually_defined_centers": [
+          "Throat",
+          "G",
+          "Sacral",
+          "Spleen"
+        ],
+        "visually_undefined_centers": [
+          "Head",
+          "Ajna",
+          "Ego",
+          "Solar Plexus",
+          "Root"
+        ],
+        "visible_colored_channels": [
+          "10-34",
+          "20-34"
+        ],
+        "confidence": {
+          "personality": {
+            "sun": 0.9,
+            "earth": 0.9,
+            "north_node": 0.0,
+            "south_node": 0.8,
+            "moon": 0.0,
+            "mercury": 0.8,
+            "venus": 0.8,
+            "mars": 0.0,
+            "jupiter": 0.8,
+            "saturn": 0.8,
+            "uranus": 0.8,
+            "neptune": 0.8,
+            "pluto": 0.8
+          },
+          "design": {
+            "sun": 0.9,
+            "earth": 0.9,
+            "north_node": 0.8,
+            "south_node": 0.0,
+            "moon": 0.8,
+            "mercury": 0.0,
+            "venus": 0.8,
+            "mars": 0.8,
+            "jupiter": 0.8,
+            "saturn": 0.8,
+            "uranus": 0.8,
+            "neptune": 0.8,
+            "pluto": 0.8
+          },
+          "visually_defined_centers": 0.7,
+          "visually_undefined_centers": 0.7,
+          "visually_active_gates": 0.7,
+          "visible_colored_channels": 0.7
+        },
+        "uncertain_items": [
+          {
+            "field_path": "personality.north_node",
+            "observed_value": null,
+            "reason": "Activation is unreadable in the synthetic partial example.",
+            "confidence": 0.0
+          },
+          {
+            "field_path": "design.mercury",
+            "observed_value": null,
+            "reason": "Activation is unreadable in the synthetic partial example.",
+            "confidence": 0.0
+          }
+        ]
+      },
+      "expected_derived_labels": null,
+      "expected_validation_result": {
+        "is_valid": false,
+        "warnings": [
+          {
+            "code": "MISSING_ACTIVATION",
+            "message": "Synthetic partial case has unavailable non-Sun activation values.",
+            "severity": "ERROR",
+            "affects_validity": true,
+            "source": "validation"
+          }
+        ]
+      },
+      "expected_warning_codes": [
+        "MISSING_ACTIVATION"
+      ]
+    }
+  ]
+}

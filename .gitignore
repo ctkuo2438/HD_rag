@@ -15,6 +15,12 @@ data/pdfs/*
 !data/pdfs/.gitkeep
 storage/
 
+# BodyGraph private/local evaluation artifacts
+data/bodygraph_samples/images/
+data/bodygraph_samples/private/
+data/bodygraph_samples/generated_responses/
+data/bodygraph_samples/vision_responses/
+
 # Python/test cache
 .pytest_cache/
 
