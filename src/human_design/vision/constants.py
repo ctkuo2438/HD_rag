@@ -1,0 +1,117 @@
+"""Single canonical Phase 2 BodyGraph domain constants source."""
+
+from __future__ import annotations
+
+
+CANONICAL_CENTERS: tuple[str, ...] = (
+    "Head",
+    "Ajna",
+    "Throat",
+    "G",
+    "Ego",
+    "Sacral",
+    "Spleen",
+    "Solar Plexus",
+    "Root",
+)
+
+CENTER_ALIASES: dict[str, str] = {
+    "Heart": "Ego",
+    "Will": "Ego",
+    "Ego": "Ego",
+    "G Center": "G",
+    "Self": "G",
+    "Identity": "G",
+    "Emotional": "Solar Plexus",
+    "Solar Plexus": "Solar Plexus",
+}
+
+ALL_CHANNELS: tuple[str, ...] = (
+    "1-8",
+    "2-14",
+    "3-60",
+    "4-63",
+    "5-15",
+    "6-59",
+    "7-31",
+    "9-52",
+    "10-20",
+    "10-34",
+    "10-57",
+    "11-56",
+    "12-22",
+    "13-33",
+    "16-48",
+    "17-62",
+    "18-58",
+    "19-49",
+    "20-34",
+    "20-57",
+    "21-45",
+    "23-43",
+    "24-61",
+    "25-51",
+    "26-44",
+    "27-50",
+    "28-38",
+    "29-46",
+    "30-41",
+    "32-54",
+    "34-57",
+    "35-36",
+    "37-40",
+    "39-55",
+    "42-53",
+    "47-64",
+)
+
+CHANNEL_TO_CENTERS: dict[str, tuple[str, str]] = {
+    "1-8": ("G", "Throat"),
+    "2-14": ("G", "Sacral"),
+    "3-60": ("Sacral", "Root"),
+    "4-63": ("Ajna", "Head"),
+    "5-15": ("Sacral", "G"),
+    "6-59": ("Solar Plexus", "Sacral"),
+    "7-31": ("G", "Throat"),
+    "9-52": ("Sacral", "Root"),
+    "10-20": ("G", "Throat"),
+    "10-34": ("G", "Sacral"),
+    "10-57": ("G", "Spleen"),
+    "11-56": ("Ajna", "Throat"),
+    "12-22": ("Throat", "Solar Plexus"),
+    "13-33": ("G", "Throat"),
+    "16-48": ("Throat", "Spleen"),
+    "17-62": ("Ajna", "Throat"),
+    "18-58": ("Spleen", "Root"),
+    "19-49": ("Root", "Solar Plexus"),
+    "20-34": ("Throat", "Sacral"),
+    "20-57": ("Throat", "Spleen"),
+    "21-45": ("Ego", "Throat"),
+    "23-43": ("Throat", "Ajna"),
+    "24-61": ("Ajna", "Head"),
+    "25-51": ("G", "Ego"),
+    "26-44": ("Ego", "Spleen"),
+    "27-50": ("Sacral", "Spleen"),
+    "28-38": ("Spleen", "Root"),
+    "29-46": ("Sacral", "G"),
+    "30-41": ("Solar Plexus", "Root"),
+    "32-54": ("Spleen", "Root"),
+    "34-57": ("Sacral", "Spleen"),
+    "35-36": ("Throat", "Solar Plexus"),
+    "37-40": ("Solar Plexus", "Ego"),
+    "39-55": ("Root", "Solar Plexus"),
+    "42-53": ("Sacral", "Root"),
+    "47-64": ("Ajna", "Head"),
+}
+
+MOTOR_CENTERS: frozenset[str] = frozenset(
+    {"Root", "Sacral", "Solar Plexus", "Ego"}
+)
+
+__all__ = [
+    "CANONICAL_CENTERS",
+    "CENTER_ALIASES",
+    "ALL_CHANNELS",
+    "CHANNEL_TO_CENTERS",
+    "MOTOR_CENTERS",
+]
