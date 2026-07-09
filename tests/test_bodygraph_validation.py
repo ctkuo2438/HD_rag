@@ -3,7 +3,10 @@ import json
 import pytest
 
 import human_design.vision.validation as validation_module
-from human_design.vision.interpreter import interpret_bodygraph
+from human_design.vision.interpreter import (
+    BodyGraphInterpretationResult,
+    interpret_bodygraph,
+)
 from human_design.vision.models import (
     Activation,
     ActivationConfidenceColumn,
@@ -222,6 +225,71 @@ def _parser_payload(
         },
         "uncertain_items": [],
     }
+
+
+def _confidence_payload(value: float = 1.0) -> dict[str, object]:
+    return {
+        "personality": {field_name: value for field_name in PLANET_FIELDS},
+        "design": {field_name: value for field_name in PLANET_FIELDS},
+        "visually_defined_centers": value,
+        "visually_undefined_centers": value,
+        "visually_active_gates": value,
+        "visible_colored_channels": value,
+    }
+
+
+def _mock_raw_json_payload(
+    *,
+    personality: dict[str, str | None],
+    design: dict[str, str | None],
+    visually_defined_centers: list[str] | None = None,
+    visually_undefined_centers: list[str] | None = None,
+    visually_active_gates: list[int | str] | None = None,
+    visible_colored_channels: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "personality": personality,
+        "design": design,
+        "visually_defined_centers": visually_defined_centers or [],
+        "visually_undefined_centers": visually_undefined_centers or [],
+        "visually_active_gates": visually_active_gates or [],
+        "visible_colored_channels": visible_colored_channels or [],
+        "confidence": _confidence_payload(),
+        "uncertain_items": [],
+    }
+
+
+def _activation_payload_from_gates(gates: tuple[int, ...]) -> dict[str, str]:
+    return {
+        field_name: f"{gates[index % len(gates)]}.{(index % 6) + 1}"
+        for index, field_name in enumerate(PLANET_FIELDS)
+    }
+
+
+def _generator_pipeline_personality() -> dict[str, str]:
+    return {
+        **_activation_payload_from_gates((61, 3, 10, 34, 60, 32)),
+        "sun": "61.4",
+    }
+
+
+def _generator_pipeline_design() -> dict[str, str]:
+    return {
+        **_activation_payload_from_gates((32, 60, 3, 34, 10, 61)),
+        "sun": "32.6",
+    }
+
+
+def _run_pipeline(
+    payload: dict[str, object],
+) -> tuple[ParseResult, BodyGraphInterpretationResult, ValidationResult]:
+    parse_result = parse_bodygraph_raw_extraction_json(json.dumps(payload))
+    interpretation_result = interpret_bodygraph(parse_result.raw_vision)
+    validation_result = validate_bodygraph_extraction(
+        parse_result=parse_result,
+        interpretation_result=interpretation_result,
+    )
+    return parse_result, interpretation_result, validation_result
 
 
 def test_public_api_returns_validation_result() -> None:
@@ -624,3 +692,136 @@ def test_existing_unsupported_authority_warning_is_not_duplicated() -> None:
     assert result.warnings == interpretation.warnings
     assert result.warnings[0].source is ValidationSource.interpreter
     assert result.is_valid is True
+
+
+def test_mocked_generator_pipeline_derives_expected_chart_data() -> None:
+    payload = _mock_raw_json_payload(
+        personality=_generator_pipeline_personality(),
+        design=_generator_pipeline_design(),
+    )
+
+    parse_result, interpretation_result, validation_result = _run_pipeline(payload)
+    chart = interpretation_result.derived_chart_data
+    basic_info = chart.basic_info
+
+    assert isinstance(parse_result.raw_vision, RawVisionExtraction)
+    assert isinstance(chart, DerivedChartData)
+    assert basic_info.profile == "4/6"
+    assert {3, 10, 32, 34, 60, 61}.issubset(chart.active_gates)
+    assert "3-60" in chart.active_channels
+    assert "10-34" in chart.active_channels
+    assert "20-34" not in chart.active_channels
+    assert {"G", "Sacral", "Root"}.issubset(chart.defined_centers)
+    assert basic_info.type == "Generator"
+    assert basic_info.authority == "Sacral"
+    assert basic_info.strategy == "To Respond"
+    assert basic_info.not_self_theme == "Frustration"
+    assert basic_info.signature == "Satisfaction"
+    assert validation_result.warnings == ()
+    assert validation_result.is_valid is True
+
+
+def test_mocked_reflector_pipeline_derives_reflector_and_lunar_authority() -> None:
+    reflector_personality = _activation_payload_from_gates((1,))
+    reflector_design = _activation_payload_from_gates((1,))
+    payload = _mock_raw_json_payload(
+        personality=reflector_personality,
+        design=reflector_design,
+    )
+
+    parse_result, interpretation_result, validation_result = _run_pipeline(payload)
+    chart = interpretation_result.derived_chart_data
+    basic_info = chart.basic_info
+
+    assert isinstance(parse_result.raw_vision, RawVisionExtraction)
+    assert chart.active_channels == ()
+    assert chart.defined_centers == ()
+    assert basic_info.type == "Reflector"
+    assert basic_info.authority == "Lunar"
+    assert basic_info.definition == "No Definition"
+    assert basic_info.strategy == "Wait a Lunar Cycle"
+    assert basic_info.not_self_theme == "Disappointment"
+    assert basic_info.signature == "Surprise"
+    assert validation_result.warnings == ()
+    assert validation_result.is_valid is True
+
+
+def test_mocked_pipeline_visual_disagreements_warn_without_invalidating() -> None:
+    payload = _mock_raw_json_payload(
+        personality=_activation_payload_from_gates((3, 60)),
+        design=_activation_payload_from_gates((3, 60)),
+        visually_defined_centers=["Throat"],
+        visually_active_gates=[3],
+        visible_colored_channels=["10-57"],
+    )
+
+    _, interpretation_result, validation_result = _run_pipeline(payload)
+
+    assert interpretation_result.derived_chart_data.active_channels == ("3-60",)
+    assert validation_result.is_valid is True
+    assert set(_warning_codes(validation_result)) == {
+        ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
+        ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
+        ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,
+        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+    }
+    for warning in validation_result.warnings:
+        _assert_warning_metadata(
+            warning,
+            code=warning.code,
+            severity=ValidationSeverity.WARNING,
+            affects_validity=False,
+            source=ValidationSource.validation,
+        )
+
+
+def test_mocked_pipeline_preserves_normalized_visible_channel_parser_warning() -> None:
+    payload = _mock_raw_json_payload(
+        personality=_activation_payload_from_gates((10, 57)),
+        design=_activation_payload_from_gates((10, 57)),
+        visible_colored_channels=["57-10"],
+    )
+
+    parse_result, interpretation_result, validation_result = _run_pipeline(payload)
+
+    assert parse_result.raw_vision.visible_colored_channels == ("10-57",)
+    assert interpretation_result.derived_chart_data.active_channels == ("10-57",)
+    assert _warning_codes(validation_result) == (
+        ValidationCode.VISIBLE_CHANNEL_NORMALIZED,
+    )
+    _assert_warning_metadata(
+        validation_result.warnings[0],
+        code=ValidationCode.VISIBLE_CHANNEL_NORMALIZED,
+        severity=ValidationSeverity.INFO,
+        affects_validity=False,
+        source=ValidationSource.parser,
+    )
+    assert ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED not in _warning_codes(
+        validation_result
+    )
+    assert validation_result.is_valid is True
+
+
+def test_mocked_pipeline_malformed_activation_parser_warning_invalidates() -> None:
+    personality = {
+        **_generator_pipeline_personality(),
+        "moon": "61.x",
+    }
+    payload = _mock_raw_json_payload(
+        personality=personality,
+        design=_generator_pipeline_design(),
+    )
+
+    parse_result, interpretation_result, validation_result = _run_pipeline(payload)
+
+    assert isinstance(parse_result.raw_vision, RawVisionExtraction)
+    assert isinstance(interpretation_result.derived_chart_data, DerivedChartData)
+    assert validation_result.is_valid is False
+    assert _warning_codes(validation_result) == (ValidationCode.MALFORMED_ACTIVATION,)
+    _assert_warning_metadata(
+        validation_result.warnings[0],
+        code=ValidationCode.MALFORMED_ACTIVATION,
+        severity=ValidationSeverity.ERROR,
+        affects_validity=True,
+        source=ValidationSource.parser,
+    )
