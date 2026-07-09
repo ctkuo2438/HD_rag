@@ -1,0 +1,626 @@
+import json
+
+import pytest
+
+import human_design.vision.validation as validation_module
+from human_design.vision.interpreter import interpret_bodygraph
+from human_design.vision.models import (
+    Activation,
+    ActivationConfidenceColumn,
+    DerivedBasicInfo,
+    DerivedChartData,
+    DesignActivationColumn,
+    ParseResult,
+    PersonalityActivationColumn,
+    RawVisionConfidence,
+    RawVisionExtraction,
+    ValidationCode,
+    ValidationResult,
+    ValidationSeverity,
+    ValidationSource,
+    ValidationWarning,
+)
+from human_design.vision.parser import parse_bodygraph_raw_extraction_json
+from human_design.vision.validation import (
+    validate_bodygraph_components,
+    validate_bodygraph_extraction,
+)
+
+
+PLANET_FIELDS = (
+    "sun",
+    "earth",
+    "north_node",
+    "south_node",
+    "moon",
+    "mercury",
+    "venus",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+)
+
+
+def _activation(gate: int, line: int = 1) -> Activation:
+    return Activation(gate=gate, line=line)
+
+
+def _confidence_column(value: float = 1.0) -> ActivationConfidenceColumn:
+    return ActivationConfidenceColumn(
+        **{field_name: value for field_name in PLANET_FIELDS}
+    )
+
+
+def _raw_confidence(value: float = 1.0) -> RawVisionConfidence:
+    return RawVisionConfidence(
+        personality=_confidence_column(value),
+        design=_confidence_column(value),
+        visually_defined_centers=value,
+        visually_undefined_centers=value,
+        visually_active_gates=value,
+        visible_colored_channels=value,
+    )
+
+
+def _activation_values_for_gates(gates: tuple[int, ...]) -> dict[str, Activation]:
+    return {
+        field_name: _activation(gates[index % len(gates)], line=(index % 6) + 1)
+        for index, field_name in enumerate(PLANET_FIELDS)
+    }
+
+
+def _raw_with_gates(
+    gates: tuple[int, ...],
+    *,
+    personality_overrides: dict[str, Activation | None] | None = None,
+    design_overrides: dict[str, Activation | None] | None = None,
+    visually_defined_centers: tuple[str, ...] = (),
+    visually_active_gates: tuple[int, ...] = (),
+    visible_colored_channels: tuple[str, ...] = (),
+) -> RawVisionExtraction:
+    personality_values: dict[str, Activation | None] = _activation_values_for_gates(
+        gates
+    )
+    design_values: dict[str, Activation | None] = _activation_values_for_gates(gates)
+    personality_values.update(personality_overrides or {})
+    design_values.update(design_overrides or {})
+
+    return RawVisionExtraction(
+        personality=PersonalityActivationColumn(**personality_values),
+        design=DesignActivationColumn(**design_values),
+        visually_defined_centers=visually_defined_centers,
+        visually_active_gates=visually_active_gates,
+        visible_colored_channels=visible_colored_channels,
+        confidence=_raw_confidence(),
+    )
+
+
+def _valid_generator_raw(**overrides: object) -> RawVisionExtraction:
+    defaults = {
+        "visually_defined_centers": ("Sacral", "Root"),
+        "visually_active_gates": (3, 60),
+        "visible_colored_channels": ("3-60",),
+    }
+    defaults.update(overrides)
+    return _raw_with_gates((3, 60), **defaults)
+
+
+def _valid_reflector_raw(**overrides: object) -> RawVisionExtraction:
+    return _raw_with_gates((1,), **overrides)
+
+
+def _validation_for_raw(
+    raw_vision: RawVisionExtraction,
+    *,
+    parser_warnings: tuple[ValidationWarning, ...] = (),
+    interpreter_warnings_override: tuple[ValidationWarning, ...] | None = None,
+) -> ValidationResult:
+    interpretation = interpret_bodygraph(raw_vision)
+    interpreter_warnings = (
+        interpretation.warnings
+        if interpreter_warnings_override is None
+        else interpreter_warnings_override
+    )
+    return validate_bodygraph_components(
+        raw_vision=raw_vision,
+        derived_chart_data=interpretation.derived_chart_data,
+        parser_warnings=parser_warnings,
+        interpreter_warnings=interpreter_warnings,
+    )
+
+
+def _warning(
+    code: ValidationCode,
+    *,
+    source: ValidationSource = ValidationSource.parser,
+    severity: ValidationSeverity | None = None,
+    affects_validity: bool | None = None,
+    field_path: str = "test.field",
+) -> ValidationWarning:
+    default_severity, default_affects_validity = _expected_defaults(code)
+    return ValidationWarning(
+        code=code,
+        message=f"{code.value} at {field_path}",
+        severity=severity or default_severity,
+        affects_validity=(
+            default_affects_validity
+            if affects_validity is None
+            else affects_validity
+        ),
+        source=source,
+    )
+
+
+def _expected_defaults(
+    code: ValidationCode,
+) -> tuple[ValidationSeverity, bool]:
+    if code is ValidationCode.VISIBLE_CHANNEL_NORMALIZED:
+        return ValidationSeverity.INFO, False
+    if code in {
+        ValidationCode.INVALID_VISIBLE_CHANNEL,
+        ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
+        ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
+        ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,
+        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+        ValidationCode.UNSUPPORTED_AUTHORITY,
+    }:
+        return ValidationSeverity.WARNING, False
+    return ValidationSeverity.ERROR, True
+
+
+def _warnings_by_code(
+    result: ValidationResult,
+    code: ValidationCode,
+) -> tuple[ValidationWarning, ...]:
+    return tuple(warning for warning in result.warnings if warning.code is code)
+
+
+def _warning_codes(result: ValidationResult) -> tuple[ValidationCode, ...]:
+    return tuple(warning.code for warning in result.warnings)
+
+
+def _assert_warning_metadata(
+    warning: ValidationWarning,
+    *,
+    code: ValidationCode,
+    severity: ValidationSeverity,
+    affects_validity: bool,
+    source: ValidationSource,
+) -> None:
+    assert warning.code is code
+    assert warning.severity is severity
+    assert warning.affects_validity is affects_validity
+    assert warning.source is source
+
+
+def _parser_payload(
+    *,
+    visible_colored_channels: list[str],
+    gates: tuple[int, ...] = (10, 57),
+) -> dict[str, object]:
+    activations = {
+        field_name: f"{gates[index % len(gates)]}.{(index % 6) + 1}"
+        for index, field_name in enumerate(PLANET_FIELDS)
+    }
+    return {
+        "personality": activations,
+        "design": activations,
+        "visually_defined_centers": [],
+        "visually_undefined_centers": [],
+        "visually_active_gates": [],
+        "visible_colored_channels": visible_colored_channels,
+        "confidence": {
+            "personality": {field_name: 1.0 for field_name in PLANET_FIELDS},
+            "design": {field_name: 1.0 for field_name in PLANET_FIELDS},
+            "visually_defined_centers": 1.0,
+            "visually_undefined_centers": 1.0,
+            "visually_active_gates": 1.0,
+            "visible_colored_channels": 1.0,
+        },
+        "uncertain_items": [],
+    }
+
+
+def test_public_api_returns_validation_result() -> None:
+    assert set(validation_module.__all__) == {
+        "validate_bodygraph_extraction",
+        "validate_bodygraph_components",
+    }
+
+    raw = _valid_generator_raw()
+    interpretation = interpret_bodygraph(raw)
+    result = validate_bodygraph_extraction(
+        parse_result=ParseResult(raw_vision=raw),
+        interpretation_result=interpretation,
+    )
+
+    assert isinstance(result, ValidationResult)
+
+
+def test_valid_generator_has_no_validation_warnings() -> None:
+    result = _validation_for_raw(_valid_generator_raw())
+
+    assert result.warnings == ()
+    assert result.is_valid is True
+
+
+def test_valid_reflector_like_chart_has_no_validation_warnings() -> None:
+    raw = _valid_reflector_raw()
+    interpretation = interpret_bodygraph(raw)
+
+    result = validate_bodygraph_components(
+        raw_vision=raw,
+        derived_chart_data=interpretation.derived_chart_data,
+        interpreter_warnings=interpretation.warnings,
+    )
+
+    assert interpretation.derived_chart_data.active_channels == ()
+    assert interpretation.derived_chart_data.defined_centers == ()
+    assert interpretation.derived_chart_data.basic_info.type == "Reflector"
+    assert interpretation.derived_chart_data.basic_info.authority == "Lunar"
+    assert result.warnings == ()
+    assert result.is_valid is True
+
+
+def test_parser_warnings_are_preserved_in_order_with_metadata() -> None:
+    raw = _valid_generator_raw()
+    parser_warnings = (
+        _warning(
+            ValidationCode.VISIBLE_CHANNEL_NORMALIZED,
+            field_path="visible_colored_channels[0]",
+        ),
+        _warning(
+            ValidationCode.INVALID_VISIBLE_CHANNEL,
+            field_path="visible_colored_channels[1]",
+        ),
+    )
+
+    result = _validation_for_raw(raw, parser_warnings=parser_warnings)
+
+    assert result.warnings[:2] == parser_warnings
+    assert result.is_valid is True
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.VISIBLE_CHANNEL_NORMALIZED,
+        severity=ValidationSeverity.INFO,
+        affects_validity=False,
+        source=ValidationSource.parser,
+    )
+    _assert_warning_metadata(
+        result.warnings[1],
+        code=ValidationCode.INVALID_VISIBLE_CHANNEL,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.parser,
+    )
+
+
+def test_malformed_activation_parser_warning_is_preserved_and_invalidates() -> None:
+    parser_warning = _warning(
+        ValidationCode.MALFORMED_ACTIVATION,
+        field_path="personality.moon",
+    )
+
+    result = _validation_for_raw(
+        _valid_generator_raw(),
+        parser_warnings=(parser_warning,),
+    )
+
+    assert result.warnings[0] == parser_warning
+    assert result.is_valid is False
+
+
+def test_interpreter_warning_is_preserved_and_does_not_invalidate() -> None:
+    raw = _raw_with_gates((24, 61))
+    interpretation = interpret_bodygraph(raw)
+
+    result = validate_bodygraph_extraction(
+        parse_result=ParseResult(raw_vision=raw),
+        interpretation_result=interpretation,
+    )
+
+    assert interpretation.warnings[0].code is ValidationCode.UNSUPPORTED_AUTHORITY
+    assert result.warnings == interpretation.warnings
+    assert result.is_valid is True
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_code"),
+    [
+        (
+            {"personality_overrides": {"sun": None}},
+            ValidationCode.MISSING_PERSONALITY_SUN,
+        ),
+        (
+            {"design_overrides": {"sun": None}},
+            ValidationCode.MISSING_DESIGN_SUN,
+        ),
+        (
+            {"personality_overrides": {"moon": None}},
+            ValidationCode.MISSING_ACTIVATION,
+        ),
+    ],
+)
+def test_missing_activation_validation_warnings_invalidate(
+    overrides: dict[str, dict[str, Activation | None]],
+    expected_code: ValidationCode,
+) -> None:
+    raw = _raw_with_gates((3, 60), **overrides)
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (expected_code,)
+    warning = result.warnings[0]
+    _assert_warning_metadata(
+        warning,
+        code=expected_code,
+        severity=ValidationSeverity.ERROR,
+        affects_validity=True,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is False
+    if expected_code is ValidationCode.MISSING_PERSONALITY_SUN:
+        assert ValidationCode.MISSING_ACTIVATION not in _warning_codes(result)
+    if expected_code is ValidationCode.MISSING_DESIGN_SUN:
+        assert ValidationCode.MISSING_ACTIVATION not in _warning_codes(result)
+
+
+@pytest.mark.parametrize(
+    ("activation", "expected_code"),
+    [
+        (_activation(99, 1), ValidationCode.INVALID_ACTIVATION_GATE),
+        (_activation(60, 9), ValidationCode.INVALID_ACTIVATION_LINE),
+    ],
+)
+def test_invalid_activation_values_invalidate(
+    activation: Activation,
+    expected_code: ValidationCode,
+) -> None:
+    raw = _raw_with_gates(
+        (3, 60),
+        personality_overrides={"moon": activation},
+    )
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (expected_code,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=expected_code,
+        severity=ValidationSeverity.ERROR,
+        affects_validity=True,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is False
+
+
+def test_parser_activation_warnings_are_not_duplicated_by_validation() -> None:
+    raw = _raw_with_gates((3, 60), personality_overrides={"moon": None})
+    parser_warning = _warning(
+        ValidationCode.MALFORMED_ACTIVATION,
+        field_path="personality.moon",
+    )
+
+    result = _validation_for_raw(raw, parser_warnings=(parser_warning,))
+
+    assert _warning_codes(result) == (ValidationCode.MALFORMED_ACTIVATION,)
+    assert result.is_valid is False
+
+
+def test_invalid_visible_channel_warns_without_invalidating_or_deriving_channel() -> None:
+    raw = _valid_reflector_raw(visible_colored_channels=("34-99",))
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (ValidationCode.INVALID_VISIBLE_CHANNEL,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.INVALID_VISIBLE_CHANNEL,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.validation,
+    )
+    assert interpret_bodygraph(raw).derived_chart_data.active_channels == ()
+    assert result.is_valid is True
+
+
+def test_reversed_valid_visible_channel_parser_warning_is_preserved() -> None:
+    parse_result = parse_bodygraph_raw_extraction_json(
+        json.dumps(_parser_payload(visible_colored_channels=["57-10"]))
+    )
+    interpretation = interpret_bodygraph(parse_result.raw_vision)
+
+    result = validate_bodygraph_extraction(
+        parse_result=parse_result,
+        interpretation_result=interpretation,
+    )
+
+    assert parse_result.raw_vision.visible_colored_channels == ("10-57",)
+    assert _warning_codes(result) == (ValidationCode.VISIBLE_CHANNEL_NORMALIZED,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.VISIBLE_CHANNEL_NORMALIZED,
+        severity=ValidationSeverity.INFO,
+        affects_validity=False,
+        source=ValidationSource.parser,
+    )
+    assert result.is_valid is True
+
+
+def test_visible_channel_not_derived_warns_without_invalidating() -> None:
+    raw = _valid_reflector_raw(visible_colored_channels=("3-60",))
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is True
+
+
+def test_derived_channel_not_visible_warns_without_invalidating() -> None:
+    raw = _raw_with_gates((3, 60, 10, 57), visible_colored_channels=("3-60",))
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is True
+
+
+def test_colored_channel_mismatch_uses_visual_and_derived_warning_codes() -> None:
+    raw = _valid_generator_raw(visible_colored_channels=("10-57",))
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (
+        ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
+        ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
+    )
+    assert all(warning.affects_validity is False for warning in result.warnings)
+    assert result.is_valid is True
+
+
+def test_empty_visible_channels_do_not_warn_for_missing_derived_channels() -> None:
+    raw = _valid_generator_raw(visible_colored_channels=())
+
+    result = _validation_for_raw(raw)
+
+    assert ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE not in _warning_codes(result)
+    assert result.warnings == ()
+    assert result.is_valid is True
+
+
+def test_visually_active_gates_mismatch_warns_without_invalidating() -> None:
+    raw = _valid_generator_raw(visually_active_gates=(3,))
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is True
+
+
+def test_empty_visually_active_gates_do_not_warn() -> None:
+    raw = _valid_generator_raw(visually_active_gates=())
+
+    result = _validation_for_raw(raw)
+
+    assert ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH not in _warning_codes(result)
+    assert result.warnings == ()
+
+
+def test_visually_defined_centers_mismatch_warns_without_invalidating() -> None:
+    raw = _valid_generator_raw(visually_defined_centers=("Throat",))
+
+    result = _validation_for_raw(raw)
+
+    assert _warning_codes(result) == (
+        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+    )
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is True
+
+
+def test_empty_visually_defined_centers_do_not_warn() -> None:
+    raw = _valid_generator_raw(visually_defined_centers=())
+
+    result = _validation_for_raw(raw)
+
+    assert ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH not in _warning_codes(result)
+    assert result.warnings == ()
+
+
+def test_reflector_with_derived_definition_data_warns_without_invalidating() -> None:
+    raw = _valid_reflector_raw()
+    interpretation = interpret_bodygraph(raw)
+    inconsistent_basic_info = DerivedBasicInfo(
+        type="Reflector",
+        authority="Lunar",
+        profile=interpretation.derived_chart_data.basic_info.profile,
+        strategy="Wait a Lunar Cycle",
+        definition="No Definition",
+        not_self_theme="Disappointment",
+        signature="Surprise",
+    )
+    inconsistent_chart = DerivedChartData(
+        basic_info=inconsistent_basic_info,
+        active_gates=interpretation.derived_chart_data.active_gates,
+        active_channels=("3-60",),
+        defined_centers=("Sacral", "Root"),
+    )
+
+    result = validate_bodygraph_components(
+        raw_vision=raw,
+        derived_chart_data=inconsistent_chart,
+    )
+
+    assert _warning_codes(result) == (
+        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+    )
+    assert result.warnings[0].source is ValidationSource.validation
+    assert result.warnings[0].affects_validity is False
+    assert result.is_valid is True
+
+
+def test_needs_review_authority_without_interpreter_warning_gets_validation_warning() -> None:
+    raw = _raw_with_gates((24, 61))
+    interpretation = interpret_bodygraph(raw)
+
+    result = _validation_for_raw(
+        raw,
+        interpreter_warnings_override=(),
+    )
+
+    assert interpretation.derived_chart_data.basic_info.authority == "Needs Review"
+    assert _warning_codes(result) == (ValidationCode.UNSUPPORTED_AUTHORITY,)
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.UNSUPPORTED_AUTHORITY,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is True
+
+
+def test_existing_unsupported_authority_warning_is_not_duplicated() -> None:
+    raw = _raw_with_gates((24, 61))
+    interpretation = interpret_bodygraph(raw)
+
+    result = validate_bodygraph_components(
+        raw_vision=raw,
+        derived_chart_data=interpretation.derived_chart_data,
+        interpreter_warnings=interpretation.warnings,
+    )
+
+    assert len(_warnings_by_code(result, ValidationCode.UNSUPPORTED_AUTHORITY)) == 1
+    assert result.warnings == interpretation.warnings
+    assert result.warnings[0].source is ValidationSource.interpreter
+    assert result.is_valid is True
