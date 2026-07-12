@@ -1,0 +1,73 @@
+{
+  "personality": {
+    "sun": "61.4",
+    "earth": "62.4",
+    "north_node": "10.2",
+    "south_node": "15.2",
+    "moon": "34.1",
+    "mercury": "20.3",
+    "venus": "57.5",
+    "mars": "3.1",
+    "jupiter": "60.1",
+    "saturn": "14.6",
+    "uranus": "2.6",
+    "neptune": "45.2",
+    "pluto": "21.2"
+  },
+  "design": {
+    "sun": "32.6",
+    "earth": "42.6",
+    "north_node": "5.1",
+    "south_node": "35.1",
+    "moon": "10.4",
+    "mercury": "34.4",
+    "venus": "60.2",
+    "mars": "3.2",
+    "jupiter": "20.1",
+    "saturn": "57.1",
+    "uranus": "14.3",
+    "neptune": "2.3",
+    "pluto": "45.5"
+  },
+  "visually_defined_centers": ["Throat", "G", "Ego", "Sacral", "Spleen", "Root"],
+  "visually_undefined_centers": ["Head", "Ajna", "Solar Plexus"],
+  "visually_active_gates": [2, 3, 5, 10, 14, 15, 20, 21, 32, 34, 35, 42, 45, 57, 60, 61, 62],
+  "visible_colored_channels": ["2-14", "3-60", "5-15", "10-20", "10-34", "10-57", "20-34", "20-57", "21-45", "34-57"],
+  "confidence": {
+    "personality": {
+      "sun": 1.0,
+      "earth": 1.0,
+      "north_node": 1.0,
+      "south_node": 1.0,
+      "moon": 1.0,
+      "mercury": 1.0,
+      "venus": 1.0,
+      "mars": 1.0,
+      "jupiter": 1.0,
+      "saturn": 1.0,
+      "uranus": 1.0,
+      "neptune": 1.0,
+      "pluto": 1.0
+    },
+    "design": {
+      "sun": 1.0,
+      "earth": 1.0,
+      "north_node": 1.0,
+      "south_node": 1.0,
+      "moon": 1.0,
+      "mercury": 1.0,
+      "venus": 1.0,
+      "mars": 1.0,
+      "jupiter": 1.0,
+      "saturn": 1.0,
+      "uranus": 1.0,
+      "neptune": 1.0,
+      "pluto": 1.0
+    },
+    "visually_defined_centers": 1.0,
+    "visually_undefined_centers": 1.0,
+    "visually_active_gates": 1.0,
+    "visible_colored_channels": 1.0
+  },
+  "uncertain_items": []
+}
