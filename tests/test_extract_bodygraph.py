@@ -23,6 +23,14 @@ MOCK_RESPONSE_PATH = (
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 FAKE_API_KEY = "fake-api-key-that-must-never-be-printed"
 FAKE_BASE64 = "A" * 180
+VISION_ENV_VARS = (
+    "OPENAI_API_KEY",
+    "HD_VISION_MODEL",
+    "HD_VISION_REASONING_EFFORT",
+    "HD_VISION_REAL_API",
+    "HD_BODYGRAPH_SAMPLE_DIR",
+    "HD_BODYGRAPH_GOLDEN_LABELS",
+)
 
 
 def _config(*, real_api_enabled: bool, api_key: str | None = None) -> VisionConfig:
@@ -38,10 +46,14 @@ def _config(*, real_api_enabled: bool, api_key: str | None = None) -> VisionConf
     )
 
 
-def _run_cli(*args: str, env_updates: dict[str, str | None] | None = None):
+def _run_cli(
+    *args: str,
+    cwd: Path,
+    env_updates: dict[str, str | None] | None = None,
+):
     env = os.environ.copy()
-    env.pop("OPENAI_API_KEY", None)
-    env.pop("HD_VISION_REAL_API", None)
+    for name in VISION_ENV_VARS:
+        env.pop(name, None)
     for key, value in (env_updates or {}).items():
         if value is None:
             env.pop(key, None)
@@ -49,7 +61,7 @@ def _run_cli(*args: str, env_updates: dict[str, str | None] | None = None):
             env[key] = value
     return subprocess.run(
         [sys.executable, str(SCRIPT_PATH), *args],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
@@ -147,11 +159,12 @@ def test_mock_response_runs_through_parser_interpreter_and_validation() -> None:
     assert validation_result.is_valid is True
 
 
-def test_human_readable_cli_mock_smoke_flow_is_safe() -> None:
+def test_human_readable_cli_mock_smoke_flow_is_safe(tmp_path: Path) -> None:
     result = _run_cli(
         str(IMAGE_PATH),
         "--mock-response",
         str(MOCK_RESPONSE_PATH),
+        cwd=tmp_path,
         env_updates={"OPENAI_API_KEY": FAKE_API_KEY},
     )
 
@@ -166,12 +179,13 @@ def test_human_readable_cli_mock_smoke_flow_is_safe() -> None:
     assert FAKE_BASE64 not in result.stdout
 
 
-def test_json_cli_mock_smoke_flow_is_serializable_and_safe() -> None:
+def test_json_cli_mock_smoke_flow_is_serializable_and_safe(tmp_path: Path) -> None:
     result = _run_cli(
         str(IMAGE_PATH),
         "--mock-response",
         str(MOCK_RESPONSE_PATH),
         "--json",
+        cwd=tmp_path,
         env_updates={"OPENAI_API_KEY": FAKE_API_KEY},
     )
 
@@ -188,17 +202,20 @@ def test_json_cli_mock_smoke_flow_is_serializable_and_safe() -> None:
     assert FAKE_BASE64 not in rendered
 
 
-def test_cli_disabled_real_api_exits_clearly_without_openai_call() -> None:
-    result = _run_cli(str(IMAGE_PATH))
+def test_cli_disabled_real_api_exits_clearly_without_openai_call(
+    tmp_path: Path,
+) -> None:
+    result = _run_cli(str(IMAGE_PATH), cwd=tmp_path)
 
     assert result.returncode != 0
     assert "HD_VISION_REAL_API=1" in result.stderr
     assert "mock response" in result.stderr
 
 
-def test_cli_real_api_without_key_exits_clearly() -> None:
+def test_cli_real_api_without_key_exits_clearly(tmp_path: Path) -> None:
     result = _run_cli(
         str(IMAGE_PATH),
+        cwd=tmp_path,
         env_updates={"HD_VISION_REAL_API": "1", "OPENAI_API_KEY": None},
     )
 
@@ -212,10 +229,26 @@ def test_cli_missing_image_exits_nonzero(tmp_path: Path) -> None:
         str(tmp_path / "missing.png"),
         "--mock-response",
         str(MOCK_RESPONSE_PATH),
+        cwd=tmp_path,
     )
 
     assert result.returncode != 0
     assert "Image file not found" in result.stderr
+
+
+def test_cli_loads_only_controlled_working_directory_dotenv(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "HD_VISION_REAL_API=invalid-controlled-value\n",
+        encoding="utf-8",
+    )
+
+    result = _run_cli(str(IMAGE_PATH), cwd=tmp_path)
+
+    assert result.returncode != 0
+    assert "HD_VISION_REAL_API must be one of" in result.stderr
+    assert "OPENAI_API_KEY" not in result.stderr
 
 
 def test_env_example_documents_safe_phase2_defaults() -> None:

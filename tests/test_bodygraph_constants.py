@@ -26,8 +26,19 @@ EXPECTED_CENTER_ALIASES = {
     "G Center": "G",
     "Self": "G",
     "Identity": "G",
+    "Splenic": "Spleen",
     "Emotional": "Solar Plexus",
     "Solar Plexus": "Solar Plexus",
+    "g_center": "G",
+    "solar_plexus": "Solar Plexus",
+    "heart_center": "Ego",
+    "ego_center": "Ego",
+    "root_center": "Root",
+    "throat_center": "Throat",
+    "spleen_center": "Spleen",
+    "sacral_center": "Sacral",
+    "head_center": "Head",
+    "ajna_center": "Ajna",
 }
 
 EXPECTED_ALL_CHANNELS = (

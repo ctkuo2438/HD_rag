@@ -160,6 +160,91 @@ def test_parse_valid_strict_json_into_typed_raw_vision_models() -> None:
     assert result.warnings == ()
 
 
+@pytest.mark.parametrize(
+    ("raw_alias", "canonical_center"),
+    [
+        ("head", "Head"),
+        ("head center", "Head"),
+        ("ajna", "Ajna"),
+        ("ajna center", "Ajna"),
+        ("throat", "Throat"),
+        ("throat center", "Throat"),
+        ("g", "G"),
+        ("g center", "G"),
+        ("g centre", "G"),
+        ("g_center", "G"),
+        ("self", "G"),
+        ("self center", "G"),
+        ("identity", "G"),
+        ("identity center", "G"),
+        ("ego", "Ego"),
+        ("ego center", "Ego"),
+        ("heart", "Ego"),
+        ("heart center", "Ego"),
+        ("will", "Ego"),
+        ("will center", "Ego"),
+        ("sacral", "Sacral"),
+        ("sacral center", "Sacral"),
+        ("spleen", "Spleen"),
+        ("spleen center", "Spleen"),
+        ("splenic", "Spleen"),
+        ("splenic center", "Spleen"),
+        ("solar plexus", "Solar Plexus"),
+        ("solar plexus center", "Solar Plexus"),
+        ("solar_plexus", "Solar Plexus"),
+        ("solar_plexus_center", "Solar Plexus"),
+        ("emotional", "Solar Plexus"),
+        ("emotional center", "Solar Plexus"),
+        ("heart_center", "Ego"),
+        ("ego_center", "Ego"),
+        ("root", "Root"),
+        ("root center", "Root"),
+        ("root_center", "Root"),
+        ("throat_center", "Throat"),
+        ("spleen_center", "Spleen"),
+        ("sacral_center", "Sacral"),
+        ("head_center", "Head"),
+        ("ajna_center", "Ajna"),
+    ],
+)
+def test_real_vision_center_aliases_normalize_to_canonical_names(
+    raw_alias: str,
+    canonical_center: str,
+) -> None:
+    payload = _valid_payload()
+    payload["visually_defined_centers"] = [raw_alias]
+    payload["visually_undefined_centers"] = []
+
+    result = _parse(payload)
+
+    assert result.raw_vision.visually_defined_centers == (canonical_center,)
+    assert result.warnings == ()
+
+
+def test_center_normalization_handles_case_whitespace_and_separators_for_all_lists(
+) -> None:
+    payload = _valid_payload()
+    payload["visually_defined_centers"] = ["  SoLaR___PlExUs---CeNtEr  "]
+    payload["visually_undefined_centers"] = ["  sPlEeN   CENTER  "]
+
+    result = _parse(payload)
+
+    assert result.raw_vision.visually_defined_centers == ("Solar Plexus",)
+    assert result.raw_vision.visually_undefined_centers == ("Spleen",)
+    assert result.warnings == ()
+
+
+def test_unknown_center_still_names_original_raw_field() -> None:
+    payload = _valid_payload()
+    payload["visually_undefined_centers"] = ["mystery_center"]
+
+    with pytest.raises(
+        BodyGraphParseError,
+        match="Unknown center in visually_undefined_centers: 'mystery_center'",
+    ):
+        _parse(payload)
+
+
 def test_malformed_json_raises_parse_error() -> None:
     with pytest.raises(BodyGraphParseError, match="Invalid JSON"):
         parse_bodygraph_raw_extraction_json('{"personality":')

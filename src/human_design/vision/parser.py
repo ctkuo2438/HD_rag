@@ -82,11 +82,25 @@ _FORBIDDEN_FINAL_CONCEPT_FIELDS = frozenset(
 
 _CHANNEL_PATTERN = re.compile(r"^(\d+)\s*-\s*(\d+)$")
 _ACTIVATION_PATTERN = re.compile(r"^(\d+)\.(\d+)$")
+
+
+def _center_key(value: str) -> str:
+    normalized = re.sub(r"[_-]+", " ", value.strip().casefold())
+    words = normalized.split()
+    if words and words[-1] in {"center", "centre"}:
+        words.pop()
+    return " ".join(words)
+
+
 _ALL_CHANNELS_SET = frozenset(ALL_CHANNELS)
 _REVERSED_CHANNELS = {
     "-".join(reversed(channel.split("-"))): channel for channel in ALL_CHANNELS
 }
 _CANONICAL_CENTERS_SET = frozenset(CANONICAL_CENTERS)
+_CENTER_NAME_LOOKUP = {
+    **{_center_key(center): center for center in CANONICAL_CENTERS},
+    **{_center_key(alias): canonical for alias, canonical in CENTER_ALIASES.items()},
+}
 
 
 def parse_bodygraph_raw_extraction_json(raw_json: str) -> ParseResult:
@@ -314,9 +328,8 @@ def _parse_centers(raw_centers: Any, field_name: str) -> tuple[str, ...]:
     for index, raw_center in enumerate(raw_centers):
         if not isinstance(raw_center, str):
             raise BodyGraphParseError(f"{field_name}[{index}] must be a center string")
-        center = raw_center.strip()
-        canonical = CENTER_ALIASES.get(center, center)
-        if canonical not in _CANONICAL_CENTERS_SET:
+        canonical = _CENTER_NAME_LOOKUP.get(_center_key(raw_center))
+        if canonical is None or canonical not in _CANONICAL_CENTERS_SET:
             raise BodyGraphParseError(f"Unknown center in {field_name}: {raw_center!r}")
         parsed.append(canonical)
     return tuple(parsed)

@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 _DEFAULT_MODEL = "gpt-5.5"
 _DEFAULT_REASONING_EFFORT = "high"
@@ -33,9 +35,20 @@ class VisionConfig:
     openai_api_key: str | None = field(default=None, repr=False)
 
 
-def load_vision_config(env: Mapping[str, str] | None = None) -> VisionConfig:
-    """Load Phase 2 settings from an optional environment mapping."""
-    source = os.environ if env is None else env
+def load_vision_config(
+    env: Mapping[str, str] | None = None,
+    *,
+    dotenv_path: Path | None = None,
+) -> VisionConfig:
+    """Load Phase 2 settings from dotenv, the process, or an explicit mapping."""
+    if env is None:
+        load_dotenv(
+            dotenv_path=dotenv_path or Path(".env"),
+            override=False,
+        )
+        source = os.environ
+    else:
+        source = env
     model = source.get("HD_VISION_MODEL", "").strip() or _DEFAULT_MODEL
     reasoning_effort = _parse_reasoning_effort(
         source.get("HD_VISION_REASONING_EFFORT", "")

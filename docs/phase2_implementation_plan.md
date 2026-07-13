@@ -1898,24 +1898,27 @@ git status --short
 ### Task 25: Final Phase 2 verification gate
 
 Goal:
-Verify Phase 2 end-to-end locally with tests, linting, mocked extraction, optional real Vision API smoke test, and evaluation.
+Verify Phase 2 locally with tests, linting, offline local pipeline execution, optional real Vision API testing, optional offline evaluation, and privacy checks.
 
 Files touched:
 - No new source files expected.
 - Fix only issues found by verification.
+- Documentation-only wording fixes are allowed if verification commands or README instructions are unclear.
 
 Dependencies:
 - Tasks 16 through 24
-- Optional local non-private BodyGraph image for manual real Vision testing
+- Optional local BodyGraph image for manual real Vision testing
+- Optional local golden labels and saved predictions for offline evaluation
 - Real Vision API key only when intentionally running `HD_VISION_REAL_API=1`
 
 Acceptance criteria:
 - `uv run pytest` passes.
 - `uv run ruff check .` passes.
-- Mock CLI extraction works with a saved mock response.
-- Evaluation script works on golden labels / saved predictions.
-- Real Vision API smoke test is documented and opt-in only.
-- No API keys, `.env`, private images, base64 dumps, or private raw responses are committed.
+- Offline local pipeline test works with a saved mock Vision response.
+- Offline local pipeline JSON output works.
+- Real Vision API test remains documented as manual and opt-in only.
+- Offline evaluation is documented as an optional developer accuracy check that requires matching golden labels and prediction `case_id`.
+- No API keys, `.env`, private images, base64 dumps, private model responses, or private prediction files are committed.
 - Phase 1 retrieval tests still pass.
 - Phase 2 does not modify Phase 1 architecture.
 
@@ -1924,25 +1927,64 @@ Final Verification Gate:
 ```sh
 uv run pytest
 uv run ruff check .
-
-# Mock/offline smoke test only.
-uv run python scripts/extract_bodygraph.py tests/fixtures/bodygraph/test1.png --mock-response tests/fixtures/bodygraph/test1_raw_response.json
-
-# Mock/offline evaluation only.
-uv run python scripts/evaluate_bodygraph_extraction.py --golden-labels data/bodygraph_samples/golden_labels.example.json --predictions tests/fixtures/bodygraph/predictions.example.json
-
-# Manual only: requires intentional real Vision API use and local non-private image.
-HD_VISION_REAL_API=1 uv run python scripts/extract_bodygraph.py data/bodygraph_samples/images/test1.png
-
-git status --short
 ```
 
-Mock/offline final verification should work in a clean repo. Manual real Vision verification still uses local ignored images.
+Offline Local Pipeline Test:
+
+```sh
+uv run python scripts/extract_bodygraph.py \
+  tests/fixtures/bodygraph/test1.png \
+  --mock-response tests/fixtures/bodygraph/test1_raw_response.json
+```
+
+This command does not call OpenAI and does not require `OPENAI_API_KEY`. It loads a sanitized mock Vision response and verifies that the local parser, deterministic interpreter, validation logic, and CLI output formatting can run successfully.
+
+Use `--json` to verify machine-readable output:
+
+```sh
+uv run python scripts/extract_bodygraph.py \
+  tests/fixtures/bodygraph/test1.png \
+  --mock-response tests/fixtures/bodygraph/test1_raw_response.json \
+  --json
+```
+
+Manual Real Vision Test, optional only:
+
+```sh
+HD_VISION_REAL_API=1 uv run python scripts/extract_bodygraph.py \
+  data/bodygraph_samples/images/test.png
+```
+
+This command is manual and opt-in. It requires a local BodyGraph image, a valid `OPENAI_API_KEY`, and intentional `HD_VISION_REAL_API=1`. It may create API cost.
+
+Save real Vision output to private JSON:
+
+```sh
+mkdir -p data/bodygraph_samples/private
+
+HD_VISION_REAL_API=1 uv run python scripts/extract_bodygraph.py \
+  data/bodygraph_samples/images/test.png \
+  --json > data/bodygraph_samples/private/test.bodygraph_prediction.json
+```
+
+Offline Evaluation, optional developer accuracy check:
+
+Evaluation is not required for normal one-chart extraction. It is only meaningful when the saved prediction and golden-label file describe the same chart and use the same `case_id`.
+
+```sh
+uv run python scripts/evaluate_bodygraph_extraction.py \
+  --golden-labels data/bodygraph_samples/private/golden_labels.local.json \
+  --predictions data/bodygraph_samples/private/predictions.local.json
+```
+
+Do not compare a private real-chart prediction against `data/bodygraph_samples/golden_labels.example.json`; that file is only a synthetic safe-to-commit example. Use a local manually verified golden-label file for the same image.
 
 Manual safety notes:
 - Real Vision API calls may create cost.
 - Do not run real Vision API commands unless intentionally testing.
-- Do not commit `.env`, API keys, private BodyGraph images, raw base64, or private model responses.
+- Do not commit `.env`, API keys, private BodyGraph images, raw base64 image data, private model responses, or private prediction files.
+- Do not commit files under `data/bodygraph_samples/private/`.
+- Mock and offline verification should work in a clean repo without OpenAI access.
 
 ### Future Phases
 
