@@ -46,45 +46,8 @@ Use this exact top-level JSON object shape and raw fields only:
     "pluto": null
   },
   "visually_defined_centers": [],
-  "visually_undefined_centers": [],
   "visually_active_gates": [],
   "visible_colored_channels": [],
-  "confidence": {
-    "personality": {
-      "sun": 0.0,
-      "earth": 0.0,
-      "north_node": 0.0,
-      "south_node": 0.0,
-      "moon": 0.0,
-      "mercury": 0.0,
-      "venus": 0.0,
-      "mars": 0.0,
-      "jupiter": 0.0,
-      "saturn": 0.0,
-      "uranus": 0.0,
-      "neptune": 0.0,
-      "pluto": 0.0
-    },
-    "design": {
-      "sun": 0.0,
-      "earth": 0.0,
-      "north_node": 0.0,
-      "south_node": 0.0,
-      "moon": 0.0,
-      "mercury": 0.0,
-      "venus": 0.0,
-      "mars": 0.0,
-      "jupiter": 0.0,
-      "saturn": 0.0,
-      "uranus": 0.0,
-      "neptune": 0.0,
-      "pluto": 0.0
-    },
-    "visually_defined_centers": 0.0,
-    "visually_undefined_centers": 0.0,
-    "visually_active_gates": 0.0,
-    "visible_colored_channels": 0.0
-  },
   "uncertain_items": []
 }
 
@@ -95,15 +58,13 @@ Activation values should be strings like "61.4" or JSON null. Use JSON null when
 Do not omit any canonical Personality or Design activation key.
 Do not use empty strings, false, 0, or {} for unavailable activations.
 
-Confidence values must be numeric finite JSON numbers from 0.0 through 1.0.
-Do not use percentages.
-Do not use strings such as "high", "low", "medium", "uncertain", or "85%".
-
 Add uncertainty items for ambiguous raw visual observations. Each item must have:
 - field_path
 - observed_value
 - reason
 - confidence
+
+Each uncertain item confidence must be a numeric finite JSON number from 0.0 through 1.0.
 
 Uncertain item field_path must point only to raw Vision fields, for example:
 - personality.sun

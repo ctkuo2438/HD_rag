@@ -1,4 +1,5 @@
 import json
+import importlib.util
 import os
 import subprocess
 import sys
@@ -9,9 +10,8 @@ import pytest
 
 from human_design.vision.client import VisionClientError, extract_bodygraph_raw_json
 from human_design.vision.config import VisionConfig
-from human_design.vision.interpreter import interpret_bodygraph
-from human_design.vision.parser import parse_bodygraph_raw_extraction_json
-from human_design.vision.validation import validate_bodygraph_extraction
+from human_design.vision.models import BodyGraphExtractionResult
+from human_design.vision.parser import BodyGraphParseError
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -28,8 +28,6 @@ VISION_ENV_VARS = (
     "HD_VISION_MODEL",
     "HD_VISION_REASONING_EFFORT",
     "HD_VISION_REAL_API",
-    "HD_BODYGRAPH_SAMPLE_DIR",
-    "HD_BODYGRAPH_GOLDEN_LABELS",
 )
 
 
@@ -38,10 +36,6 @@ def _config(*, real_api_enabled: bool, api_key: str | None = None) -> VisionConf
         model="gpt-5.5",
         reasoning_effort="high",
         real_api_enabled=real_api_enabled,
-        bodygraph_sample_dir=Path("data/bodygraph_samples/images"),
-        golden_labels_path=Path(
-            "data/bodygraph_samples/golden_labels.example.json"
-        ),
         openai_api_key=api_key,
     )
 
@@ -67,6 +61,15 @@ def _run_cli(
         text=True,
         check=False,
     )
+
+
+def _load_cli_module():
+    spec = importlib.util.spec_from_file_location("extract_bodygraph_cli", SCRIPT_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_mock_client_returns_json_without_api_key() -> None:
@@ -115,10 +118,6 @@ def test_real_client_passes_model_and_reasoning_effort_separately(
         model="gpt-5.5",
         reasoning_effort="xhigh",
         real_api_enabled=True,
-        bodygraph_sample_dir=Path("data/bodygraph_samples/images"),
-        golden_labels_path=Path(
-            "data/bodygraph_samples/golden_labels.example.json"
-        ),
         openai_api_key="offline-fake-key",
     )
 
@@ -130,6 +129,84 @@ def test_real_client_passes_model_and_reasoning_effort_separately(
     assert raw_json == '{"mock": "response"}'
     assert captured_request["model"] == "gpt-5.5"
     assert captured_request["reasoning"] == {"effort": "xhigh"}
+    assert captured_request["store"] is False
+
+    text_config = captured_request["text"]
+    assert isinstance(text_config, dict)
+    response_format = text_config["format"]
+    assert isinstance(response_format, dict)
+    assert response_format["type"] == "json_schema"
+    assert response_format["name"] == "bodygraph_raw_extraction"
+    assert response_format["strict"] is True
+
+    schema = response_format["schema"]
+    assert isinstance(schema, dict)
+    expected_top_level = {
+        "personality",
+        "design",
+        "visually_defined_centers",
+        "visually_active_gates",
+        "visible_colored_channels",
+        "uncertain_items",
+    }
+    assert set(schema["required"]) == expected_top_level
+    assert schema["additionalProperties"] is False
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    planetary_fields = {
+        "sun",
+        "earth",
+        "north_node",
+        "south_node",
+        "moon",
+        "mercury",
+        "venus",
+        "mars",
+        "jupiter",
+        "saturn",
+        "uranus",
+        "neptune",
+        "pluto",
+    }
+    assert set(properties["personality"]["properties"]) == planetary_fields
+    assert set(properties["design"]["properties"]) == planetary_fields
+    assert properties["personality"]["additionalProperties"] is False
+    assert properties["design"]["additionalProperties"] is False
+    uncertain_item = properties["uncertain_items"]["items"]
+    assert uncertain_item["additionalProperties"] is False
+    assert set(uncertain_item["required"]) == {
+        "field_path",
+        "observed_value",
+        "reason",
+        "confidence",
+    }
+    observed_value_types = {
+        option["type"]
+        for option in uncertain_item["properties"]["observed_value"]["anyOf"]
+    }
+    assert observed_value_types == {"string", "integer", "number", "null"}
+    final_human_design_fields = {
+        "type",
+        "authority",
+        "profile",
+        "definition",
+        "strategy",
+        "active_channels",
+        "defined_centers",
+    }
+    assert not final_human_design_fields & set(properties)
+
+    def assert_all_object_schemas_are_strict(node: object) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node["additionalProperties"] is False
+            for child in node.values():
+                assert_all_object_schemas_are_strict(child)
+        elif isinstance(node, list):
+            for child in node:
+                assert_all_object_schemas_are_strict(child)
+
+    assert_all_object_schemas_are_strict(schema)
 
 
 def test_client_rejects_missing_image_in_mock_mode(tmp_path: Path) -> None:
@@ -141,22 +218,87 @@ def test_client_rejects_missing_image_in_mock_mode(tmp_path: Path) -> None:
         )
 
 
-def test_mock_response_runs_through_parser_interpreter_and_validation() -> None:
-    raw_json = extract_bodygraph_raw_json(
+def test_official_pipeline_returns_typed_extraction_result() -> None:
+    from human_design.vision.pipeline import extract_bodygraph
+
+    result = extract_bodygraph(
         image_path=IMAGE_PATH,
         config=_config(real_api_enabled=False),
         mock_response_path=MOCK_RESPONSE_PATH,
     )
-    parse_result = parse_bodygraph_raw_extraction_json(raw_json)
-    interpretation_result = interpret_bodygraph(parse_result.raw_vision)
-    validation_result = validate_bodygraph_extraction(
-        parse_result=parse_result,
-        interpretation_result=interpretation_result,
-    )
 
-    assert parse_result.raw_vision.personality.sun is not None
-    assert interpretation_result.derived_chart_data.basic_info.profile == "4/6"
-    assert validation_result.is_valid is True
+    assert isinstance(result, BodyGraphExtractionResult)
+    assert result.raw_vision.personality.sun is not None
+    assert result.derived_chart_data.basic_info.profile == "4/6"
+    assert result.validation.is_valid is True
+
+
+def test_official_pipeline_preserves_existing_parser_error(tmp_path: Path) -> None:
+    from human_design.vision.pipeline import extract_bodygraph
+
+    invalid_response = tmp_path / "invalid.json"
+    invalid_response.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(BodyGraphParseError, match="Missing required top-level field"):
+        extract_bodygraph(
+            image_path=IMAGE_PATH,
+            config=_config(real_api_enabled=False),
+            mock_response_path=invalid_response,
+        )
+
+
+def test_official_pipeline_preserves_existing_missing_image_error(
+    tmp_path: Path,
+) -> None:
+    from human_design.vision.pipeline import extract_bodygraph
+
+    with pytest.raises(VisionClientError, match="Image file not found"):
+        extract_bodygraph(
+            image_path=tmp_path / "missing.png",
+            config=_config(real_api_enabled=False),
+            mock_response_path=MOCK_RESPONSE_PATH,
+        )
+
+
+def test_cli_delegates_to_official_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from human_design.vision.pipeline import extract_bodygraph
+
+    expected_result = extract_bodygraph(
+        image_path=IMAGE_PATH,
+        config=_config(real_api_enabled=False),
+        mock_response_path=MOCK_RESPONSE_PATH,
+    )
+    module = _load_cli_module()
+    calls: list[tuple[Path, VisionConfig, Path | None]] = []
+    config = _config(real_api_enabled=False)
+
+    def fake_extract_bodygraph(
+        *,
+        image_path: Path,
+        config: VisionConfig,
+        mock_response_path: Path | None = None,
+    ) -> BodyGraphExtractionResult:
+        calls.append((image_path, config, mock_response_path))
+        return expected_result
+
+    monkeypatch.setattr(module, "load_vision_config", lambda: config)
+    monkeypatch.setattr(module, "extract_bodygraph", fake_extract_bodygraph)
+
+    status = module.main(
+        [str(IMAGE_PATH), "--mock-response", str(MOCK_RESPONSE_PATH), "--json"]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert status == 0
+    assert calls == [(IMAGE_PATH, config, MOCK_RESPONSE_PATH)]
+    assert set(payload) == {
+        "raw_vision",
+        "derived_chart_data",
+        "validation_result",
+    }
 
 
 def test_human_readable_cli_mock_smoke_flow_is_safe(tmp_path: Path) -> None:
@@ -257,11 +399,6 @@ def test_env_example_documents_safe_phase2_defaults() -> None:
     assert "HD_VISION_MODEL=gpt-5.5" in contents
     assert "HD_VISION_REASONING_EFFORT=high" in contents
     assert "HD_VISION_REAL_API=0" in contents
-    assert "HD_BODYGRAPH_SAMPLE_DIR=data/bodygraph_samples/images" in contents
-    assert (
-        "HD_BODYGRAPH_GOLDEN_LABELS="
-        "data/bodygraph_samples/golden_labels.example.json"
-    ) in contents
     assert "sk-" not in contents
     assert "/Users/" not in contents
     assert "/home/" not in contents

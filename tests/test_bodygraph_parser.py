@@ -1,5 +1,4 @@
 import json
-import math
 from pathlib import Path
 from typing import Any
 
@@ -58,10 +57,6 @@ def _activation_values() -> dict[str, str]:
     }
 
 
-def _confidence_column(value: float = 0.8) -> dict[str, float]:
-    return {field_name: value for field_name in PLANET_FIELDS}
-
-
 def _valid_payload() -> dict[str, Any]:
     return {
         "personality": _activation_values(),
@@ -71,17 +66,8 @@ def _valid_payload() -> dict[str, Any]:
             "earth": "42.6",
         },
         "visually_defined_centers": ["Throat", "G Center", "Sacral"],
-        "visually_undefined_centers": ["Head", "Ajna", "Will", "Emotional"],
         "visually_active_gates": [10, "20", 34, 57, "60"],
         "visible_colored_channels": ["10-34", "3 - 60"],
-        "confidence": {
-            "personality": _confidence_column(),
-            "design": _confidence_column(),
-            "visually_defined_centers": 0.0,
-            "visually_undefined_centers": 0.5,
-            "visually_active_gates": 1.0,
-            "visible_colored_channels": 0.8,
-        },
         "uncertain_items": [
             {
                 "field_path": "personality.sun",
@@ -91,6 +77,20 @@ def _valid_payload() -> dict[str, Any]:
             }
         ],
     }
+
+
+def test_simplified_six_field_raw_schema_parses_without_fixed_confidence() -> None:
+    result = _parse(_valid_payload())
+
+    assert not hasattr(result.raw_vision, "confidence")
+
+
+def test_removed_fixed_confidence_is_rejected_as_a_top_level_extra() -> None:
+    payload = _valid_payload()
+    payload["confidence"] = {}
+
+    with pytest.raises(BodyGraphParseError, match="confidence"):
+        _parse(payload)
 
 
 def _parse(payload: dict[str, Any]):
@@ -117,9 +117,9 @@ def test_prompt_file_and_loader_return_raw_fact_instructions() -> None:
     assert "extract only raw visible facts" in prompt_lower
     assert "strict json only" in prompt_lower
     assert "json null" in prompt_lower
-    assert "percentages" in prompt_lower
-    assert "high" in prompt_lower
-    assert "low" in prompt_lower
+    assert "each uncertain item confidence" in prompt_lower
+    assert "0.0 through 1.0" in prompt_lower
+    assert '"confidence": {' not in prompt_lower
 
     for field_name in PLANET_FIELDS:
         assert field_name in prompt
@@ -145,17 +145,8 @@ def test_parse_valid_strict_json_into_typed_raw_vision_models() -> None:
     assert result.raw_vision.personality.jupiter == Activation(gate=60, line=1)
     assert result.raw_vision.personality.pluto == Activation(gate=50, line=4)
     assert result.raw_vision.visually_defined_centers == ("Throat", "G", "Sacral")
-    assert result.raw_vision.visually_undefined_centers == (
-        "Head",
-        "Ajna",
-        "Ego",
-        "Solar Plexus",
-    )
     assert result.raw_vision.visually_active_gates == (10, 20, 34, 57, 60)
     assert result.raw_vision.visible_colored_channels == ("10-34", "3-60")
-    assert result.raw_vision.confidence.visually_defined_centers == 0.0
-    assert result.raw_vision.confidence.visually_undefined_centers == 0.5
-    assert result.raw_vision.confidence.visually_active_gates == 1.0
     assert result.raw_vision.uncertain_items[0].field_path == "personality.sun"
     assert result.warnings == ()
 
@@ -213,7 +204,6 @@ def test_real_vision_center_aliases_normalize_to_canonical_names(
 ) -> None:
     payload = _valid_payload()
     payload["visually_defined_centers"] = [raw_alias]
-    payload["visually_undefined_centers"] = []
 
     result = _parse(payload)
 
@@ -221,27 +211,57 @@ def test_real_vision_center_aliases_normalize_to_canonical_names(
     assert result.warnings == ()
 
 
-def test_center_normalization_handles_case_whitespace_and_separators_for_all_lists(
+def test_center_normalization_handles_case_whitespace_and_separators(
 ) -> None:
     payload = _valid_payload()
     payload["visually_defined_centers"] = ["  SoLaR___PlExUs---CeNtEr  "]
-    payload["visually_undefined_centers"] = ["  sPlEeN   CENTER  "]
 
     result = _parse(payload)
 
     assert result.raw_vision.visually_defined_centers == ("Solar Plexus",)
-    assert result.raw_vision.visually_undefined_centers == ("Spleen",)
     assert result.warnings == ()
 
 
-def test_unknown_center_still_names_original_raw_field() -> None:
+def test_invalid_visual_centers_are_skipped_with_indexed_nonfatal_warnings() -> None:
     payload = _valid_payload()
-    payload["visually_undefined_centers"] = ["mystery_center"]
+    payload["visually_defined_centers"] = [
+        "Sacral",
+        "mystery_center",
+        123,
+        "Root",
+    ]
 
-    with pytest.raises(
-        BodyGraphParseError,
-        match="Unknown center in visually_undefined_centers: 'mystery_center'",
-    ):
+    result = _parse(payload)
+
+    assert result.raw_vision.visually_defined_centers == ("Sacral", "Root")
+    assert _warning_codes(result.warnings) == (
+        ValidationCode.INVALID_VISUAL_CENTER,
+        ValidationCode.INVALID_VISUAL_CENTER,
+    )
+    assert "visually_defined_centers[1]" in result.warnings[0].message
+    assert "visually_defined_centers[2]" in result.warnings[1].message
+    assert all(
+        warning.severity is ValidationSeverity.WARNING
+        and warning.affects_validity is False
+        and warning.source is ValidationSource.parser
+        for warning in result.warnings
+    )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "raw_value"),
+    [
+        ("visually_defined_centers", "Sacral"),
+    ],
+)
+def test_visual_center_containers_must_remain_lists(
+    field_name: str,
+    raw_value: object,
+) -> None:
+    payload = _valid_payload()
+    payload[field_name] = raw_value
+
+    with pytest.raises(BodyGraphParseError, match=field_name):
         _parse(payload)
 
 
@@ -250,16 +270,30 @@ def test_malformed_json_raises_parse_error() -> None:
         parse_bodygraph_raw_extraction_json('{"personality":')
 
 
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_nonstandard_json_numeric_constants_are_rejected(constant: str) -> None:
+    with pytest.raises(BodyGraphParseError, match="Invalid JSON|non-standard"):
+        parse_bodygraph_raw_extraction_json(f'{{"value": {constant}}}')
+
+
+def test_nested_nonfinite_uncertain_observed_value_is_rejected_at_json_decode() -> None:
+    payload = json.dumps(_valid_payload()).replace(
+        '"observed_value": "61.4"',
+        '"observed_value": NaN',
+    )
+
+    with pytest.raises(BodyGraphParseError, match="Invalid JSON|non-standard"):
+        parse_bodygraph_raw_extraction_json(payload)
+
+
 @pytest.mark.parametrize(
     "missing_field",
     [
         "personality",
         "design",
         "visually_defined_centers",
-        "visually_undefined_centers",
         "visually_active_gates",
         "visible_colored_channels",
-        "confidence",
         "uncertain_items",
     ],
 )
@@ -273,12 +307,39 @@ def test_missing_required_top_level_fields_raise_parse_error(
         _parse(payload)
 
 
+def test_unexpected_top_level_field_remains_rejected() -> None:
+    payload = _valid_payload()
+    payload["provider_metadata"] = {}
+
+    with pytest.raises(BodyGraphParseError, match="provider_metadata"):
+        _parse(payload)
+
+
 @pytest.mark.parametrize("container", ["personality", "design"])
 def test_personality_and_design_containers_must_be_objects(container: str) -> None:
     payload = _valid_payload()
     payload[container] = []
 
     with pytest.raises(BodyGraphParseError, match=container):
+        _parse(payload)
+
+
+@pytest.mark.parametrize("column_name", ["personality", "design"])
+def test_activation_columns_reject_extra_keys_with_full_path(
+    column_name: str,
+) -> None:
+    payload = _valid_payload()
+    payload[column_name]["ascendant"] = "12.3"
+
+    with pytest.raises(BodyGraphParseError, match=rf"{column_name}\.ascendant"):
+        _parse(payload)
+
+
+def test_uncertain_items_reject_extra_keys_with_indexed_full_path() -> None:
+    payload = _valid_payload()
+    payload["uncertain_items"][0]["type"] = "Generator"
+
+    with pytest.raises(BodyGraphParseError, match=r"uncertain_items\[0\]\.type"):
         _parse(payload)
 
 
@@ -414,31 +475,33 @@ def test_visually_active_gates_normalize_to_integers_and_invalid_gates_warn() ->
 
     assert result.raw_vision.visually_active_gates == (10, 20, 34)
     assert _warning_codes(result.warnings) == (
-        ValidationCode.INVALID_ACTIVATION_GATE,
-        ValidationCode.INVALID_ACTIVATION_GATE,
-        ValidationCode.INVALID_ACTIVATION_GATE,
-        ValidationCode.INVALID_ACTIVATION_GATE,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
     )
     assert all(warning.source is ValidationSource.parser for warning in result.warnings)
+    assert all(
+        warning.severity is ValidationSeverity.WARNING
+        and warning.affects_validity is False
+        for warning in result.warnings
+    )
 
 
-@pytest.mark.parametrize("valid_value", [0.0, 0.5, 1.0])
-def test_valid_confidence_values_are_accepted(valid_value: float) -> None:
+def test_invalid_visual_gate_is_skipped_with_nonfatal_visual_warning() -> None:
     payload = _valid_payload()
-    payload["confidence"]["visually_defined_centers"] = valid_value
+    payload["visually_active_gates"] = [3, 60, 99]
 
     result = _parse(payload)
 
-    assert result.raw_vision.confidence.visually_defined_centers == valid_value
-
-
-@pytest.mark.parametrize("bad_value", [-0.01, 1.01, "high", True, math.inf])
-def test_invalid_confidence_values_raise_parse_error(bad_value: object) -> None:
-    payload = _valid_payload()
-    payload["confidence"]["visually_defined_centers"] = bad_value
-
-    with pytest.raises(BodyGraphParseError, match="confidence"):
-        _parse(payload)
+    assert result.raw_vision.visually_active_gates == (3, 60)
+    assert _warning_codes(result.warnings) == (
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+    )
+    warning = result.warnings[0]
+    assert warning.severity is ValidationSeverity.WARNING
+    assert warning.affects_validity is False
+    assert warning.source is ValidationSource.parser
 
 
 @pytest.mark.parametrize(

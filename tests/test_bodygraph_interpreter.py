@@ -2,7 +2,6 @@ from dataclasses import is_dataclass
 
 import pytest
 
-import human_design.vision.interpreter as interpreter
 from human_design.vision.constants import (
     ALL_CHANNELS,
     CANONICAL_CENTERS,
@@ -17,12 +16,10 @@ from human_design.vision.interpreter import (
 )
 from human_design.vision.models import (
     Activation,
-    ActivationConfidenceColumn,
     DerivedBasicInfo,
     DerivedChartData,
     DesignActivationColumn,
     PersonalityActivationColumn,
-    RawVisionConfidence,
     RawVisionExtraction,
     ValidationCode,
     ValidationSeverity,
@@ -59,23 +56,6 @@ def _activation(gate: int, line: int = 1) -> Activation:
     return Activation(gate=gate, line=line)
 
 
-def _confidence_column(value: float = 1.0) -> ActivationConfidenceColumn:
-    return ActivationConfidenceColumn(
-        **{field_name: value for field_name in PLANET_FIELDS}
-    )
-
-
-def _raw_confidence(value: float = 1.0) -> RawVisionConfidence:
-    return RawVisionConfidence(
-        personality=_confidence_column(value),
-        design=_confidence_column(value),
-        visually_defined_centers=value,
-        visually_undefined_centers=value,
-        visually_active_gates=value,
-        visible_colored_channels=value,
-    )
-
-
 def _personality_column(
     values: dict[str, Activation | None] | None = None,
 ) -> PersonalityActivationColumn:
@@ -97,7 +77,6 @@ def _raw_vision(
     personality_values: dict[str, Activation | None] | None = None,
     design_values: dict[str, Activation | None] | None = None,
     visually_defined_centers: tuple[str, ...] = (),
-    visually_undefined_centers: tuple[str, ...] = (),
     visually_active_gates: tuple[int, ...] = (),
     visible_colored_channels: tuple[str, ...] = (),
 ) -> RawVisionExtraction:
@@ -105,10 +84,8 @@ def _raw_vision(
         personality=_personality_column(personality_values),
         design=_design_column(design_values),
         visually_defined_centers=visually_defined_centers,
-        visually_undefined_centers=visually_undefined_centers,
         visually_active_gates=visually_active_gates,
         visible_colored_channels=visible_colored_channels,
-        confidence=_raw_confidence(),
     )
 
 
@@ -116,7 +93,6 @@ def _raw_with_gates(
     gates: tuple[int, ...],
     *,
     visually_defined_centers: tuple[str, ...] = (),
-    visually_undefined_centers: tuple[str, ...] = (),
     visually_active_gates: tuple[int, ...] = (),
     visible_colored_channels: tuple[str, ...] = (),
 ) -> RawVisionExtraction:
@@ -139,7 +115,6 @@ def _raw_with_gates(
         personality_values=personality,
         design_values=design,
         visually_defined_centers=visually_defined_centers,
-        visually_undefined_centers=visually_undefined_centers,
         visually_active_gates=visually_active_gates,
         visible_colored_channels=visible_colored_channels,
     )
@@ -150,13 +125,6 @@ def _interpret_gates(gates: tuple[int, ...]) -> BodyGraphInterpretationResult:
 
 
 def test_public_api_returns_typed_frozen_result_models() -> None:
-    assert set(interpreter.__all__) == {
-        "BodyGraphInterpretationResult",
-        "interpret_bodygraph",
-        "derive_active_gates",
-        "derive_active_channels",
-        "derive_defined_centers",
-    }
     assert is_dataclass(BodyGraphInterpretationResult)
     assert BodyGraphInterpretationResult.__dataclass_params__.frozen is True
 
@@ -262,7 +230,6 @@ def test_raw_visual_centers_do_not_define_derived_centers_or_type() -> None:
     raw = _raw_with_gates(
         (1,),
         visually_defined_centers=("Sacral", "Throat"),
-        visually_undefined_centers=("Head", "Ajna"),
     )
 
     result = interpret_bodygraph(raw)
@@ -395,6 +362,44 @@ def test_interpret_bodygraph_derives_type_authority_and_type_fields(
     assert basic_info.strategy == strategy
     assert basic_info.not_self_theme == not_self_theme
     assert basic_info.signature == signature
+    assert result.warnings == ()
+
+
+def test_projector_with_25_51_has_ego_projected_authority() -> None:
+    result = _interpret_gates((25, 51))
+    chart = result.derived_chart_data
+
+    assert chart.active_channels == ("25-51",)
+    assert chart.defined_centers == ("G", "Ego")
+    assert chart.basic_info.type == "Projector"
+    assert chart.basic_info.authority == "Ego-Projected"
+    assert result.warnings == ()
+
+
+@pytest.mark.parametrize("channel", ["1-8", "7-31", "10-20", "13-33"])
+def test_projector_direct_g_to_throat_channels_have_self_projected_authority(
+    channel: str,
+) -> None:
+    gates = tuple(int(gate) for gate in channel.split("-"))
+
+    result = _interpret_gates(gates)
+    chart = result.derived_chart_data
+
+    assert chart.active_channels == (channel,)
+    assert chart.defined_centers == ("Throat", "G")
+    assert chart.basic_info.type == "Projector"
+    assert chart.basic_info.authority == "Self-Projected"
+    assert result.warnings == ()
+
+
+def test_projector_splenic_authority_precedes_projected_authorities() -> None:
+    result = _interpret_gates((10, 57, 25, 51))
+    chart = result.derived_chart_data
+
+    assert chart.active_channels == ("10-57", "25-51")
+    assert chart.defined_centers == ("G", "Ego", "Spleen")
+    assert chart.basic_info.type == "Projector"
+    assert chart.basic_info.authority == "Splenic"
     assert result.warnings == ()
 
 

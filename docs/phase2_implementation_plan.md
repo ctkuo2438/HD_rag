@@ -80,11 +80,11 @@ Vision API raw extraction prompt
    ↓
 Strict JSON parser
    ↓
-Raw BodyGraph facts + uncertainty/confidence
+Raw BodyGraph facts + per-item uncertainty
    ↓
 Deterministic Python interpreter
    ↓
-Derived chart_data.basic_info
+Derived chart data (`derived_chart_data.basic_info`)
    ↓
 Validation rules and warnings
    ↓
@@ -134,13 +134,13 @@ Do not add web frameworks, AWS packages, Streamlit, FastAPI, database dependenci
 │           ├── parser.py
 │           ├── interpreter.py
 │           ├── validation.py
+│           ├── pipeline.py
 │           └── evaluation.py
 ├── tests/
 │   ├── fixtures/
 │   │   └── bodygraph/
 │   │       ├── test1.png
-│   │       ├── test1_raw_response.json
-│   │       └── predictions.example.json
+│   │       └── test1_raw_response.json
 │   ├── test_vision_config.py
 │   ├── test_vision_models.py
 │   ├── test_bodygraph_constants.py
@@ -153,6 +153,16 @@ Do not add web frameworks, AWS packages, Streamlit, FastAPI, database dependenci
 │   └── phase2_implementation_plan.md
 ```
 
+`vision/pipeline.py` provides the official typed orchestration boundary:
+
+```text
+client
+-> parser
+-> interpreter
+-> validation
+-> BodyGraphExtractionResult
+```
+
 Private BodyGraph images should not be committed by default. Unit tests should use mocked JSON responses and sanitized fixtures. `tests/fixtures/bodygraph/test1.png` should be a small committed non-private or synthetic BodyGraph-like image used only for mock/offline CLI smoke tests. It must not contain private user chart data. Real/private chart images remain local-only under `data/bodygraph_samples/images/` or `data/bodygraph_samples/private/` and should be ignored by git.
 
 ## Required Schema Design
@@ -163,7 +173,7 @@ The output schema must separate:
 - derived chart data
 - validation
 
-Raw extraction must include confidence or uncertainty fields.
+Raw extraction records ambiguity through per-item uncertainty fields.
 
 Conceptual schema:
 
@@ -201,45 +211,8 @@ Conceptual schema:
       "pluto": "50.1"
     },
     "visually_defined_centers": [],
-    "visually_undefined_centers": [],
     "visually_active_gates": [],
     "visible_colored_channels": [],
-    "confidence": {
-      "personality": {
-        "sun": 0.0,
-        "earth": 0.0,
-        "north_node": 0.0,
-        "south_node": 0.0,
-        "moon": 0.0,
-        "mercury": 0.0,
-        "venus": 0.0,
-        "mars": 0.0,
-        "jupiter": 0.0,
-        "saturn": 0.0,
-        "uranus": 0.0,
-        "neptune": 0.0,
-        "pluto": 0.0
-      },
-      "design": {
-        "sun": 0.0,
-        "earth": 0.0,
-        "north_node": 0.0,
-        "south_node": 0.0,
-        "moon": 0.0,
-        "mercury": 0.0,
-        "venus": 0.0,
-        "mars": 0.0,
-        "jupiter": 0.0,
-        "saturn": 0.0,
-        "uranus": 0.0,
-        "neptune": 0.0,
-        "pluto": 0.0
-      },
-      "visually_defined_centers": 0.0,
-      "visually_undefined_centers": 0.0,
-      "visually_active_gates": 0.0,
-      "visible_colored_channels": 0.0
-    },
     "uncertain_items": [
       {
         "field_path": "visible_colored_channels[0]",
@@ -283,7 +256,6 @@ A normal activation value is a `Gate.Line` string such as `"61.4"`. JSON `null` 
 Important distinction:
 
 - `visually_defined_centers`: centers the Vision model believes appear colored or defined in the image.
-- `visually_undefined_centers`: centers the Vision model believes appear white or undefined in the image.
 - `visually_active_gates`: gates the Vision model sees as colored on the BodyGraph.
 - `active_gates`: gates deterministically derived from Personality and Design planetary activations.
 - `visible_colored_channels`: channels the Vision model sees as fully colored.
@@ -347,11 +319,11 @@ Missing activation issue rules:
 - out-of-range gates and lines produce `INVALID_ACTIVATION_GATE` or `INVALID_ACTIVATION_LINE`.
 - missing or invalid required activation data makes `validation.is_valid` false because deterministic active gates, channels, centers, and final chart interpretation could otherwise be incomplete.
 - unavailable activation values must not be silently treated as empty gates, false values, or absent active gates.
-- confidence and `uncertain_items` are metadata only and must not bypass missing-activation validation.
+- `uncertain_items` are metadata only and must not bypass missing-activation validation.
 
-### Confidence and Uncertainty
+### Uncertainty Items
 
-Confidence values must be numeric only. Every confidence value must be a finite float in the inclusive range:
+Each uncertainty-item confidence must be numeric and finite in the inclusive range:
 
 ```text
 0.0 <= confidence <= 1.0
@@ -366,9 +338,9 @@ Do not use percentages, strings such as `"high"` or `"low"`, or free-form confid
 - `reason` is a concise explanation of the visual ambiguity.
 - `confidence` uses the same numeric `0.0` to `1.0` range.
 - Empty `uncertain_items` is valid.
-- Confidence and uncertainty are raw extraction metadata, not direct inputs to deterministic interpretation.
+- Per-item uncertainty confidence is raw extraction metadata, not a direct input to deterministic interpretation.
 - Phase 2 evaluation does not need to score confidence calibration yet.
-- The parser must reject or clearly flag confidence values outside the allowed range.
+- The parser must reject uncertainty-item confidence values outside the allowed range.
 - Do not add a confidence threshold that changes chart derivation behavior in Phase 2.
 
 ### Validation Issue Shape
@@ -770,17 +742,17 @@ At minimum:
 In this table, `defined` means present in `derived_chart_data.defined_centers`.
 
 ```text
-Solar Plexus defined -> Emotional / Solar Plexus
+Reflector -> Lunar
+Else Solar Plexus defined -> Emotional
 Else Sacral defined -> Sacral
 Else Spleen defined -> Splenic
-Else Heart/Ego authority where explicitly supported by tested rules
-Else G/Self to Throat where explicitly supported by tested rules -> Self-Projected
-Else mental Projector case where explicitly supported by tested rules -> Mental / Environmental
-Else no derived centers -> Lunar
-Else -> Unknown / Needs Review with validation warning
+Else Manifestor with Ego defined -> Ego
+Else Projector with active Channel 25-51 -> Ego-Projected
+Else Projector with active Channel 1-8, 7-31, 10-20, or 13-33 -> Self-Projected
+Else -> Needs Review with validation warning
 ```
 
-Do not overclaim correctness for Ego, Self-Projected, or Mental Projector authority unless explicit deterministic rules and tests are implemented.
+For Phase 2 v1, Self-Projected Authority requires one of exactly `1-8`, `7-31`, `10-20`, or `13-33`. A defined G Center alone is insufficient. Emotional, Sacral, and Splenic Authority retain priority over the Projector-specific projected-authority rules.
 
 If an authority case is unsupported or ambiguous, return either:
 
@@ -825,11 +797,13 @@ Validation must check:
 - visible colored channels not present in derived active channels
 - visually defined centers versus `derived_chart_data.defined_centers`
 - Reflector consistency:
-  - no derived defined centers
-  - no active channels
-  - Lunar authority
-  - Reflector type
+  - `active_channels == ()`
+  - `defined_centers == ()`
+  - `authority == "Lunar"`
+  - `definition == "No Definition"`
 - unsupported authority cases should produce warnings rather than hallucinated authority
+
+A derived chart whose type is `Reflector` but violates any of those invariants produces one fatal `INCONSISTENT_DERIVED_CHART` warning and is invalid.
 
 Warnings should have machine-readable codes, severity, validity effect, and source so tests and evaluation can compare expected warning behavior.
 
@@ -839,6 +813,8 @@ Default warning contract:
 |---|---|---:|---|
 | `VISIBLE_CHANNEL_NORMALIZED` | `INFO` | false | A valid reversed visible channel was normalized to canonical orientation. |
 | `INVALID_VISIBLE_CHANNEL` | `WARNING` | false | Vision reported an impossible or non-canonical visible channel. |
+| `INVALID_VISUALLY_ACTIVE_GATE` | `WARNING` | false | Vision reported an invalid item in the supporting visually active Gate list. |
+| `INVALID_VISUAL_CENTER` | `WARNING` | false | Vision reported an unknown or malformed visually defined Center. |
 | `VISIBLE_CHANNEL_NOT_DERIVED` | `WARNING` | false | Vision reported a visible channel that was not derived from column activations. |
 | `DERIVED_CHANNEL_NOT_VISIBLE` | `WARNING` | false | A column-derived channel was not detected visually. |
 | `VISUALLY_ACTIVE_GATES_MISMATCH` | `WARNING` | false | Visual gate evidence differs from column-derived active gates. |
@@ -850,6 +826,7 @@ Default warning contract:
 | `MALFORMED_ACTIVATION` | `ERROR` | true | A required planetary activation cannot be interpreted as Gate.Line. |
 | `INVALID_ACTIVATION_GATE` | `ERROR` | true | An activation gate is outside 1 through 64. |
 | `INVALID_ACTIVATION_LINE` | `ERROR` | true | An activation line is outside 1 through 6. |
+| `INCONSISTENT_DERIVED_CHART` | `ERROR` | true | Deterministic derived chart data violates the required Reflector invariant. |
 
 Not every warning makes the full extraction invalid. Parser errors should be used for invalid JSON and missing required structural fields. Recoverable Vision extraction issues should generally survive parsing and become validation warnings so evaluation can measure them. Validation warnings should be used for cross-source disagreement between visual evidence and column-derived facts.
 
@@ -874,10 +851,9 @@ Prefer OpenAI-only config for Phase 2 unless provider abstraction is truly neede
 Environment variables:
 
 ```env
-HD_VISION_MODEL=
+HD_VISION_MODEL=gpt-5.5
+HD_VISION_REASONING_EFFORT=high
 HD_VISION_REAL_API=0
-HD_BODYGRAPH_SAMPLE_DIR=data/bodygraph_samples/images
-HD_BODYGRAPH_GOLDEN_LABELS=data/bodygraph_samples/golden_labels.example.json
 OPENAI_API_KEY=
 ```
 
@@ -930,71 +906,80 @@ Golden labels should include both raw expected labels and derived expected label
 
 Semantics:
 
-- `expected_raw` evaluates Vision extraction of raw visible facts.
-- `expected_derived` evaluates deterministic Python derivation.
-- `expected_validation` evaluates warning behavior and validity status.
+- `expected_raw_labels` evaluates Vision extraction of raw visible facts.
+- `expected_derived_labels` evaluates deterministic Python derivation.
+- `expected_validation_result` evaluates warning behavior and validity status.
 
 Example shape:
 
 ```json
 {
+  "schema_version": "phase2_golden_labels_v2",
+  "documentation": {},
+  "recommended_sample_coverage": {},
   "cases": [
     {
-      "id": "test1_generator_emotional_4_6",
-      "image_file": "test1.png",
+      "case_id": "test1_generator_sacral_4_6",
+      "image_filename": "test1.png",
       "label_source": "manual",
       "notes": "Non-private local sample label",
-      "expected_raw": {
+      "evaluation_scope": {
+        "include_raw_visual_metrics": true,
+        "include_derived_metrics": true
+      },
+      "expected_raw_labels": {
         "personality": {
-          "sun": "61.4",
-          "earth": "62.4",
-          "north_node": "3.1",
-          "south_node": "60.2",
-          "moon": "10.3",
-          "mercury": "34.2",
-          "venus": "30.1",
-          "mars": "41.5",
-          "jupiter": "50.2",
-          "saturn": "59.2",
-          "uranus": "18.1",
-          "neptune": "22.2",
-          "pluto": "14.3"
+          "sun": null,
+          "earth": null,
+          "north_node": null,
+          "south_node": null,
+          "moon": null,
+          "mercury": null,
+          "venus": null,
+          "mars": null,
+          "jupiter": null,
+          "saturn": null,
+          "uranus": null,
+          "neptune": null,
+          "pluto": null
         },
         "design": {
-          "sun": "32.6",
-          "earth": "42.6",
-          "north_node": "5.1",
-          "south_node": "44.1",
-          "moon": "60.3",
-          "mercury": "3.4",
-          "venus": "34.1",
-          "mars": "10.4",
-          "jupiter": "61.1",
-          "saturn": "62.1",
-          "uranus": "41.1",
-          "neptune": "14.1",
-          "pluto": "50.1"
+          "sun": null,
+          "earth": null,
+          "north_node": null,
+          "south_node": null,
+          "moon": null,
+          "mercury": null,
+          "venus": null,
+          "mars": null,
+          "jupiter": null,
+          "saturn": null,
+          "uranus": null,
+          "neptune": null,
+          "pluto": null
         },
         "visually_defined_centers": ["G", "Sacral", "Solar Plexus", "Root"],
-        "visually_undefined_centers": ["Head", "Ajna", "Throat", "Ego", "Spleen"],
         "visually_active_gates": [],
-        "visible_colored_channels": ["10-34", "3-60", "30-41"]
+        "visible_colored_channels": ["10-34", "3-60", "30-41"],
+        "uncertain_items": []
       },
-      "expected_derived": {
+      "expected_derived_labels": {
+        "basic_info": {
+          "type": "Generator",
+          "authority": "Sacral",
+          "profile": "4/6",
+          "strategy": "To Respond",
+          "definition": "Single Definition",
+          "not_self_theme": "Frustration",
+          "signature": "Satisfaction"
+        },
         "active_gates": [3, 5, 10, 14, 18, 22, 30, 32, 34, 41, 42, 44, 50, 59, 60, 61, 62],
         "active_channels": ["10-34", "3-60", "30-41"],
-        "defined_centers": ["G", "Sacral", "Solar Plexus", "Root"],
-        "type": "Generator",
-        "authority": "Emotional / Solar Plexus",
-        "profile": "4/6",
-        "definition": "Single Definition",
-        "strategy": "Responding",
-        "not_self_theme": "Frustration",
-        "signature": "Satisfaction"
+        "defined_centers": ["G", "Sacral", "Solar Plexus", "Root"]
       },
-      "expected_validation": {
+      "expected_validation_result": {
         "is_valid": true,
-        "expected_warning_codes": []
+        "warnings": []
       }
     }
   ]
@@ -1009,8 +994,8 @@ Golden-label rules:
 - A case with unavailable planetary source data may be included only as a raw visual-evidence case.
 - A partial case must explicitly declare an evaluation scope that excludes it from derived-chart metrics.
 - Do not silently treat missing golden activations as empty values, false values, or evaluation mismatches.
-- Confidence and `uncertain_items` may be included in `expected_raw` when useful for parser and CLI fixtures.
-- Phase 2 golden-label evaluation does not need to score confidence calibration yet.
+- `uncertain_items` retain their own bounded numeric confidence when an observation is ambiguous.
+- Prediction files use `phase2_predictions_v1` with an exact top-level `schema_version` and `predictions` list. Each prediction contains only `case_id`, `raw_vision`, `derived_chart_data`, and `validation_result`.
 
 The sample set should recommend coverage for:
 
@@ -1115,7 +1100,7 @@ Task 17 fixture and golden-label work may begin after Task 16, but it must follo
 ### Task 16: Define BodyGraph extraction schema
 
 Goal:
-Define typed data models for raw Vision extraction, derived chart data, confidence/uncertainty, and validation results.
+Define typed data models for raw Vision extraction, derived chart data, per-item uncertainty, and validation results.
 
 Files touched:
 - `src/human_design/vision/__init__.py`
@@ -1132,7 +1117,7 @@ Acceptance criteria:
   - Personality activation column
   - Design activation column
   - raw Vision extraction result
-  - confidence / uncertainty result
+  - uncertainty item
   - derived basic info
   - derived chart data
   - validation warning
@@ -1142,10 +1127,8 @@ Acceptance criteria:
   - `personality`
   - `design`
   - `visually_defined_centers`
-  - `visually_undefined_centers`
   - `visually_active_gates`
   - `visible_colored_channels`
-  - `confidence`
   - `uncertain_items`
 - Activation columns contain all 13 canonical planetary keys for Personality and all 13 canonical planetary keys for Design.
 - Activation values can represent `Gate.Line` values or unavailable values with `None` or an equivalent typed nullable representation.
@@ -1178,8 +1161,8 @@ Acceptance criteria:
 - Validation warnings have machine-readable codes.
 - Validation warnings include the generic `MISSING_ACTIVATION` code for unavailable non-Sun required activation values.
 - Missing Sun fields use `MISSING_PERSONALITY_SUN` or `MISSING_DESIGN_SUN` without duplicate `MISSING_ACTIVATION` warnings.
-- Confidence values are finite floats in the inclusive range `0.0` to `1.0`.
-- Confidence values are not percentages, strings, or free-form text.
+- Uncertainty-item confidence values are finite numbers in the inclusive range `0.0` to `1.0`.
+- Uncertainty-item confidence values are not percentages, strings, or free-form text.
 - `uncertain_items` include `field_path`, `observed_value`, `reason`, and numeric `confidence`.
 - `field_path` in `uncertain_items` points only to raw Vision fields.
 - Models use type hints.
@@ -1196,8 +1179,8 @@ Out of scope:
 
 Testing requirements:
 - Tests should instantiate the models with representative raw and derived chart data.
-- Tests should verify optional uncertainty/confidence fields can represent ambiguous raw extraction.
-- Tests should verify confidence values reject or clearly flag values outside `0.0` to `1.0`.
+- Tests should verify uncertainty items can represent ambiguous raw extraction.
+- Tests should verify uncertainty-item confidence rejects values outside `0.0` to `1.0`.
 - Tests should verify validation warning codes, severity, source, and validity effects are available for assertions.
 - Tests should verify `is_valid` is false when any issue has `affects_validity=True`.
 - Tests should verify unavailable non-Sun activation values can be represented and produce `MISSING_ACTIVATION`.
@@ -1298,15 +1281,12 @@ Acceptance criteria:
   - expected raw labels
   - expected derived labels
   - expected validation result
-  - expected warning codes
 - Raw labels include:
   - full Personality activation column with the 13 canonical planetary field names
   - full Design activation column with the 13 canonical planetary field names
   - visually active gates if available
   - visually defined centers
-  - visually undefined centers
   - visible full colored channels
-  - confidence values when included
   - uncertain items when included
 - Derived labels include:
   - active gates derived from columns
@@ -1385,14 +1365,11 @@ Acceptance criteria:
   - Personality column values
   - Design column values
   - visually colored / defined centers
-  - visually undefined centers if visible/inferable
   - visually active gates
   - visibly full colored channels
-  - numeric confidence values per activation and major visual extraction group
-  - uncertainty items for ambiguous raw visual observations
+  - uncertainty items with bounded numeric confidence for ambiguous raw visual observations
 - Prompt requests every canonical Personality and Design activation key.
 - Prompt instructs the model to use JSON `null` when a required activation cannot be read.
-- Prompt forbids confidence percentages, strings such as `"high"` or `"low"`, and free-form confidence text.
 - Prompt requires strict JSON only.
 - Parser can parse valid model JSON into typed models.
 - Parser rejects malformed JSON with clear errors.
@@ -1416,9 +1393,8 @@ Acceptance criteria:
 - Parser validates activation gate range 1-64.
 - Parser validates activation line range 1-6.
 - Parser preserves invalid activation issues so validation can emit `INVALID_ACTIVATION_GATE` or `INVALID_ACTIVATION_LINE`.
-- Parser validates confidence values as finite floats in the inclusive range `0.0` to `1.0`.
-- Parser rejects or clearly flags confidence values outside the allowed range.
 - Parser preserves `uncertain_items` with `field_path`, `observed_value`, `reason`, and numeric `confidence`.
+- Parser validates each uncertainty-item confidence as a finite number in the inclusive range `0.0` to `1.0`.
 - Parser rejects or clearly flags `uncertain_items.field_path` values that point to derived chart fields.
 - Parser does not derive `basic_info`.
 - Parser does not derive active channels.
@@ -1448,8 +1424,7 @@ Testing requirements:
 - Tests should cover `3 - 60` normalizing to `3-60`.
 - Tests should cover `34-99` and `10-99` as invalid channels.
 - Tests should cover `10-34` as valid.
-- Tests should cover valid numeric confidence values.
-- Tests should cover invalid confidence values below `0.0`, above `1.0`, non-finite floats, and string confidence values.
+- Tests should cover valid and invalid numeric confidence values on uncertainty items.
 - Tests should cover `uncertain_items` with raw Vision field paths.
 - Tests should verify parser warnings can be merged into final validation output.
 - Tests should confirm final Human Design concepts are not accepted as Vision-derived facts.
@@ -1810,10 +1785,9 @@ Acceptance criteria:
 - `.env.example` includes only non-secret placeholder or default values.
 - `.env.example` must not contain a real API key, private image path, personal image filename, or private local directory.
 - At minimum, Phase 2 documentation in `.env.example` should cover:
-  - `HD_VISION_MODEL=`
+  - `HD_VISION_MODEL=gpt-5.5`
+  - `HD_VISION_REASONING_EFFORT=high`
   - `HD_VISION_REAL_API=0`
-  - `HD_BODYGRAPH_SAMPLE_DIR=data/bodygraph_samples/images`
-  - `HD_BODYGRAPH_GOLDEN_LABELS=data/bodygraph_samples/golden_labels.example.json`
 - `OPENAI_API_KEY=` may remain as an empty placeholder only.
 - `.env.example` changes belong to Task 23 because Task 23 introduces Phase 2 config and CLI behavior.
 - Default tests mock client calls.
@@ -1988,7 +1962,7 @@ Manual safety notes:
 
 ### Future Phases
 
-- Phase 3: RAG answer generation / reading generation using Phase 1 retrieval and Phase 2 `chart_data`.
+- Phase 3: RAG answer generation / reading generation using Phase 1 retrieval and Phase 2 `BodyGraphExtractionResult`.
 - Phase 4: local app or API.
 - Phase 5: cloud deployment / productionization.
 

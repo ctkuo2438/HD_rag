@@ -31,6 +31,8 @@ _TYPE_TO_LIFE_FIELDS: dict[str, tuple[str, str, str]] = {
     "Reflector": ("Wait a Lunar Cycle", "Disappointment", "Surprise"),
 }
 
+_SELF_PROJECTED_CHANNELS = frozenset({"1-8", "7-31", "10-20", "13-33"})
+
 
 @dataclass(frozen=True)
 class BodyGraphInterpretationResult:
@@ -57,7 +59,11 @@ def interpret_bodygraph(raw_vision: RawVisionExtraction) -> BodyGraphInterpretat
     defined_centers = derive_defined_centers(active_channels)
 
     chart_type = _derive_type(defined_centers, active_channels)
-    authority, warnings = _derive_authority(chart_type, defined_centers)
+    authority, warnings = _derive_authority(
+        chart_type,
+        defined_centers,
+        active_channels,
+    )
     strategy, not_self_theme, signature = _derive_type_life_fields(chart_type)
 
     basic_info = DerivedBasicInfo(
@@ -204,6 +210,7 @@ def _has_direct_motor_to_throat(active_channels: tuple[str, ...]) -> bool:
 def _derive_authority(
     chart_type: str,
     defined_centers: tuple[str, ...],
+    active_channels: tuple[str, ...],
 ) -> tuple[str, tuple[ValidationWarning, ...]]:
     defined_center_set = set(defined_centers)
     if chart_type == "Reflector":
@@ -216,7 +223,11 @@ def _derive_authority(
         return "Splenic", ()
     if chart_type == "Manifestor" and "Ego" in defined_center_set:
         return "Ego", ()
-    if chart_type == "Projector" and "G" in defined_center_set:
+    if chart_type == "Projector" and "25-51" in active_channels:
+        return "Ego-Projected", ()
+    if chart_type == "Projector" and _SELF_PROJECTED_CHANNELS.intersection(
+        active_channels
+    ):
         return "Self-Projected", ()
     return "Needs Review", (_unsupported_authority_warning(),)
 

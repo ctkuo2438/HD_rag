@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import math
 import re
-from collections.abc import Mapping
-from numbers import Real
-from typing import Any
+from collections.abc import Collection, Mapping
+from typing import Any, NoReturn
 
 from human_design.vision.constants import (
     ALL_CHANNELS,
@@ -16,11 +14,9 @@ from human_design.vision.constants import (
 )
 from human_design.vision.models import (
     Activation,
-    ActivationConfidenceColumn,
     ParseResult,
     PersonalityActivationColumn,
     DesignActivationColumn,
-    RawVisionConfidence,
     RawVisionExtraction,
     UncertainItem,
     ValidationCode,
@@ -55,12 +51,14 @@ _REQUIRED_TOP_LEVEL_FIELDS = frozenset(
         "personality",
         "design",
         "visually_defined_centers",
-        "visually_undefined_centers",
         "visually_active_gates",
         "visible_colored_channels",
-        "confidence",
         "uncertain_items",
     }
+)
+
+_UNCERTAIN_ITEM_FIELDS = frozenset(
+    {"field_path", "observed_value", "reason", "confidence"}
 )
 
 _FORBIDDEN_FINAL_CONCEPT_FIELDS = frozenset(
@@ -119,17 +117,13 @@ def parse_bodygraph_raw_extraction_json(raw_json: str) -> ParseResult:
         column_name="design",
         warnings=warnings,
     )
-    confidence = _parse_confidence(payload["confidence"])
     raw_vision = RawVisionExtraction(
         personality=personality,
         design=design,
         visually_defined_centers=_parse_centers(
             payload["visually_defined_centers"],
             "visually_defined_centers",
-        ),
-        visually_undefined_centers=_parse_centers(
-            payload["visually_undefined_centers"],
-            "visually_undefined_centers",
+            warnings,
         ),
         visually_active_gates=_parse_visible_gates(
             payload["visually_active_gates"],
@@ -139,7 +133,6 @@ def parse_bodygraph_raw_extraction_json(raw_json: str) -> ParseResult:
             payload["visible_colored_channels"],
             warnings,
         ),
-        confidence=confidence,
         uncertain_items=_parse_uncertain_items(payload["uncertain_items"]),
     )
     return ParseResult(raw_vision=raw_vision, warnings=tuple(warnings))
@@ -147,13 +140,22 @@ def parse_bodygraph_raw_extraction_json(raw_json: str) -> ParseResult:
 
 def _parse_json_object(raw_json: str) -> Mapping[str, Any]:
     try:
-        payload = json.loads(raw_json)
+        payload = json.loads(
+            raw_json,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
     except json.JSONDecodeError as exc:
         raise BodyGraphParseError(f"Invalid JSON: {exc.msg}") from exc
 
     if not isinstance(payload, dict):
         raise BodyGraphParseError("Raw Vision JSON must be a top-level object")
     return payload
+
+
+def _reject_nonstandard_json_constant(value: str) -> NoReturn:
+    raise BodyGraphParseError(
+        f"Invalid JSON: non-standard numeric constant {value}"
+    )
 
 
 def _validate_top_level_schema(payload: Mapping[str, Any]) -> None:
@@ -182,6 +184,11 @@ def _parse_activation_column(
 ) -> PersonalityActivationColumn | DesignActivationColumn:
     if not isinstance(raw_column, dict):
         raise BodyGraphParseError(f"{column_name} must be a JSON object")
+    _reject_extra_keys(
+        raw_column,
+        allowed_keys=_PLANETARY_FIELDS,
+        field_path=column_name,
+    )
 
     parsed: dict[str, Activation | None] = {}
     for field_name in _PLANETARY_FIELDS:
@@ -301,7 +308,7 @@ def _parse_visible_gates(
         if gate is None or not 1 <= gate <= 64:
             warnings.append(
                 _parser_warning(
-                    ValidationCode.INVALID_ACTIVATION_GATE,
+                    ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
                     f"visually_active_gates[{index}]",
                 )
             )
@@ -320,81 +327,30 @@ def _coerce_visible_gate(value: Any) -> int | None:
     return None
 
 
-def _parse_centers(raw_centers: Any, field_name: str) -> tuple[str, ...]:
+def _parse_centers(
+    raw_centers: Any,
+    field_name: str,
+    warnings: list[ValidationWarning],
+) -> tuple[str, ...]:
     if not isinstance(raw_centers, list):
         raise BodyGraphParseError(f"{field_name} must be a list")
 
     parsed: list[str] = []
     for index, raw_center in enumerate(raw_centers):
+        field_path = f"{field_name}[{index}]"
         if not isinstance(raw_center, str):
-            raise BodyGraphParseError(f"{field_name}[{index}] must be a center string")
+            warnings.append(
+                _parser_warning(ValidationCode.INVALID_VISUAL_CENTER, field_path)
+            )
+            continue
         canonical = _CENTER_NAME_LOOKUP.get(_center_key(raw_center))
         if canonical is None or canonical not in _CANONICAL_CENTERS_SET:
-            raise BodyGraphParseError(f"Unknown center in {field_name}: {raw_center!r}")
+            warnings.append(
+                _parser_warning(ValidationCode.INVALID_VISUAL_CENTER, field_path)
+            )
+            continue
         parsed.append(canonical)
     return tuple(parsed)
-
-
-def _parse_confidence(raw_confidence: Any) -> RawVisionConfidence:
-    if not isinstance(raw_confidence, dict):
-        raise BodyGraphParseError("confidence must be a JSON object")
-
-    personality = _parse_confidence_column(
-        raw_confidence.get("personality"),
-        "confidence.personality",
-    )
-    design = _parse_confidence_column(
-        raw_confidence.get("design"),
-        "confidence.design",
-    )
-    return RawVisionConfidence(
-        personality=personality,
-        design=design,
-        visually_defined_centers=_parse_confidence_value(
-            raw_confidence.get("visually_defined_centers"),
-            "confidence.visually_defined_centers",
-        ),
-        visually_undefined_centers=_parse_confidence_value(
-            raw_confidence.get("visually_undefined_centers"),
-            "confidence.visually_undefined_centers",
-        ),
-        visually_active_gates=_parse_confidence_value(
-            raw_confidence.get("visually_active_gates"),
-            "confidence.visually_active_gates",
-        ),
-        visible_colored_channels=_parse_confidence_value(
-            raw_confidence.get("visible_colored_channels"),
-            "confidence.visible_colored_channels",
-        ),
-    )
-
-
-def _parse_confidence_column(raw_column: Any, field_path: str) -> ActivationConfidenceColumn:
-    if not isinstance(raw_column, dict):
-        raise BodyGraphParseError(f"{field_path} must be a JSON object")
-
-    values = {
-        field_name: _parse_confidence_value(
-            raw_column.get(field_name),
-            f"{field_path}.{field_name}",
-        )
-        for field_name in _PLANETARY_FIELDS
-    }
-    return ActivationConfidenceColumn(**values)
-
-
-def _parse_confidence_value(value: Any, field_path: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise BodyGraphParseError(f"{field_path} confidence must be a JSON number")
-
-    confidence = float(value)
-    if not math.isfinite(confidence):
-        raise BodyGraphParseError(f"{field_path} confidence must be finite")
-    if not 0.0 <= confidence <= 1.0:
-        raise BodyGraphParseError(
-            f"{field_path} confidence must be between 0.0 and 1.0"
-        )
-    return confidence
 
 
 def _parse_uncertain_items(raw_items: Any) -> tuple[UncertainItem, ...]:
@@ -402,16 +358,20 @@ def _parse_uncertain_items(raw_items: Any) -> tuple[UncertainItem, ...]:
         raise BodyGraphParseError("uncertain_items must be a list")
 
     parsed: list[UncertainItem] = []
-    required_fields = {"field_path", "observed_value", "reason", "confidence"}
     for index, raw_item in enumerate(raw_items):
         if not isinstance(raw_item, dict):
             raise BodyGraphParseError(f"uncertain_items[{index}] must be an object")
-        missing = required_fields - raw_item.keys()
+        missing = _UNCERTAIN_ITEM_FIELDS - raw_item.keys()
         if missing:
             raise BodyGraphParseError(
                 f"uncertain_items[{index}] missing required field: "
                 f"{sorted(missing)[0]}"
             )
+        _reject_extra_keys(
+            raw_item,
+            allowed_keys=_UNCERTAIN_ITEM_FIELDS,
+            field_path=f"uncertain_items[{index}]",
+        )
         try:
             parsed.append(
                 UncertainItem(
@@ -440,9 +400,26 @@ def _parser_warning(code: ValidationCode, field_path: str) -> ValidationWarning:
 def _warning_defaults(code: ValidationCode) -> tuple[ValidationSeverity, bool]:
     if code is ValidationCode.VISIBLE_CHANNEL_NORMALIZED:
         return ValidationSeverity.INFO, False
-    if code is ValidationCode.INVALID_VISIBLE_CHANNEL:
+    if code in {
+        ValidationCode.INVALID_VISIBLE_CHANNEL,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+        ValidationCode.INVALID_VISUAL_CENTER,
+    }:
         return ValidationSeverity.WARNING, False
     return ValidationSeverity.ERROR, True
+
+
+def _reject_extra_keys(
+    value: Mapping[str, Any],
+    *,
+    allowed_keys: Collection[str],
+    field_path: str,
+) -> None:
+    extra_keys = set(value) - set(allowed_keys)
+    if extra_keys:
+        raise BodyGraphParseError(
+            f"Unexpected field: {field_path}.{sorted(extra_keys)[0]}"
+        )
 
 
 __all__ = [

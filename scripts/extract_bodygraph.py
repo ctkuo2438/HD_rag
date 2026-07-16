@@ -9,14 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
-from human_design.vision.client import VisionClientError, extract_bodygraph_raw_json
+from human_design.vision.client import VisionClientError
 from human_design.vision.config import load_vision_config
-from human_design.vision.interpreter import interpret_bodygraph
-from human_design.vision.parser import (
-    BodyGraphParseError,
-    parse_bodygraph_raw_extraction_json,
-)
-from human_design.vision.validation import validate_bodygraph_extraction
+from human_design.vision.parser import BodyGraphParseError
+from human_design.vision.pipeline import extract_bodygraph
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -37,16 +33,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         config = load_vision_config()
-        raw_json = extract_bodygraph_raw_json(
+        extraction_result = extract_bodygraph(
             image_path=args.image_path,
             config=config,
             mock_response_path=args.mock_response,
-        )
-        parse_result = parse_bodygraph_raw_extraction_json(raw_json)
-        interpretation_result = interpret_bodygraph(parse_result.raw_vision)
-        validation_result = validate_bodygraph_extraction(
-            parse_result=parse_result,
-            interpretation_result=interpretation_result,
         )
     except (VisionClientError, BodyGraphParseError, ValueError) as exc:
         print(f"BodyGraph extraction failed: {exc}", file=sys.stderr)
@@ -59,9 +49,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     payload = {
-        "raw_vision": asdict(parse_result.raw_vision),
-        "derived_chart_data": asdict(interpretation_result.derived_chart_data),
-        "validation_result": asdict(validation_result),
+        "raw_vision": asdict(extraction_result.raw_vision),
+        "derived_chart_data": asdict(extraction_result.derived_chart_data),
+        "validation_result": asdict(extraction_result.validation),
     }
     if args.json:
         print(json.dumps(payload, separators=(",", ":")))

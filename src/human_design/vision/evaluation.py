@@ -34,21 +34,11 @@ BASIC_INFO_FIELDS: tuple[str, ...] = (
 
 
 @dataclass(frozen=True)
-class MetricResult:
-    """A named metric value with the number of eligible cases."""
-
-    name: str
-    value: float
-    eligible_count: int
-
-
-@dataclass(frozen=True)
 class EvaluationCaseResult:
     """Metrics for one golden-label case."""
 
     case_id: str
     metrics: Mapping[str, float]
-    passed_thresholds: bool
     warnings: tuple[str, ...] = ()
 
 
@@ -74,16 +64,24 @@ def evaluate_bodygraph_prediction(
     expected_raw = _expected_raw_labels(golden)
     predicted_raw = _prediction_raw_labels(prediction)
     metrics.update(_activation_metrics(expected_raw, predicted_raw))
-    metrics.update(_visual_metrics(expected_raw, predicted_raw))
+    if _include_raw_visual_metrics(golden):
+        metrics.update(_visual_metrics(expected_raw, predicted_raw))
 
-    expected_derived = _expected_derived_labels(golden)
+    expected_is_valid = _expected_validation_is_valid(golden)
+    if expected_is_valid is not None:
+        predicted_is_valid = _prediction_validation_is_valid(prediction)
+        metrics["validation_is_valid_exact_match"] = (
+            1.0 if predicted_is_valid is expected_is_valid else 0.0
+        )
+
+    expected_derived_labels = _expected_derived_labels(golden)
     predicted_derived = _prediction_derived_chart_data(prediction)
-    if _include_derived_metrics(golden, expected_derived):
+    if _include_derived_metrics(golden, expected_derived_labels):
         if predicted_derived is None:
             warnings.append("Prediction is missing derived_chart_data.")
             predicted_derived = {}
-        metrics.update(_derived_metrics(expected_derived, predicted_derived))
-        metrics.update(_basic_info_metrics(expected_derived, predicted_derived))
+        metrics.update(_derived_metrics(expected_derived_labels, predicted_derived))
+        metrics.update(_basic_info_metrics(expected_derived_labels, predicted_derived))
 
     expected_warnings = _expected_warnings(golden)
     predicted_warnings = _prediction_warnings(prediction)
@@ -99,7 +97,6 @@ def evaluate_bodygraph_prediction(
     return EvaluationCaseResult(
         case_id=case_id,
         metrics=metrics,
-        passed_thresholds=True,
         warnings=tuple(warnings),
     )
 
@@ -112,8 +109,8 @@ def evaluate_bodygraph_predictions(
 ) -> EvaluationSummary:
     """Evaluate saved predictions and macro-average metrics across cases."""
     per_case: list[EvaluationCaseResult] = []
-    for index, golden in enumerate(golden_cases):
-        case_id = _case_id(golden, index)
+    for golden in golden_cases:
+        case_id = _case_id(golden)
         prediction = predictions.get(case_id, {})
         per_case.append(
             evaluate_bodygraph_prediction(
@@ -205,57 +202,46 @@ def warning_code_metrics(
     }
 
 
-def _case_id(golden: Mapping[str, object], index: int) -> str:
-    for key in ("case_id", "id"):
-        value = golden.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return f"case_{index + 1}"
+def _case_id(golden: Mapping[str, object]) -> str:
+    value = golden.get("case_id")
+    if not isinstance(value, str) or not value:
+        raise ValueError("golden case case_id must be a non-empty string")
+    return value
 
 
 def _expected_raw_labels(golden: Mapping[str, object]) -> Mapping[str, object]:
-    raw_labels = _mapping_or_none(golden.get("expected_raw_labels"))
-    if raw_labels is not None:
-        return raw_labels
-    raw_vision = _mapping_or_none(golden.get("raw_vision"))
-    if raw_vision is not None:
-        return raw_vision
-    return golden
+    return _mapping_or_none(golden.get("expected_raw_labels")) or {}
 
 
 def _prediction_raw_labels(prediction: Mapping[str, object]) -> Mapping[str, object]:
-    raw_vision = _mapping_or_none(prediction.get("raw_vision"))
-    if raw_vision is not None:
-        return raw_vision
-    return prediction
+    return _mapping_or_none(prediction.get("raw_vision")) or {}
 
 
 def _expected_derived_labels(
     golden: Mapping[str, object],
 ) -> Mapping[str, object] | None:
-    for key in ("expected_derived_labels", "expected_derived", "derived_chart_data"):
-        if key in golden:
-            return _mapping_or_none(golden.get(key))
-    return None
+    return _mapping_or_none(golden.get("expected_derived_labels"))
 
 
 def _prediction_derived_chart_data(
     prediction: Mapping[str, object],
 ) -> Mapping[str, object] | None:
-    for key in ("derived_chart_data", "derived", "chart_data"):
-        if key in prediction:
-            return _mapping_or_none(prediction.get(key))
-    return prediction
+    return _mapping_or_none(prediction.get("derived_chart_data"))
 
 
 def _include_derived_metrics(
     golden: Mapping[str, object],
-    expected_derived: Mapping[str, object] | None,
+    expected_derived_labels: Mapping[str, object] | None,
 ) -> bool:
     scope = _mapping_or_none(golden.get("evaluation_scope"))
     if scope is not None and scope.get("include_derived_metrics") is False:
         return False
-    return expected_derived is not None
+    return expected_derived_labels is not None
+
+
+def _include_raw_visual_metrics(golden: Mapping[str, object]) -> bool:
+    scope = _mapping_or_none(golden.get("evaluation_scope"))
+    return scope is None or scope.get("include_raw_visual_metrics") is not False
 
 
 def _activation_metrics(
@@ -312,68 +298,54 @@ def _visual_metrics(
     predicted_raw: Mapping[str, object],
 ) -> dict[str, float]:
     metrics: dict[str, float] = {}
-    _add_set_metrics_if_available(
+    _add_required_set_metrics_if_expected_available(
         metrics,
         "visually_defined_center",
         _collection_or_none(expected_raw, "visually_defined_centers"),
-        _collection_or_none(predicted_raw, "visually_defined_centers"),
+        _collection_or_empty(predicted_raw, "visually_defined_centers"),
     )
-    _add_set_metrics_if_available(
+    _add_required_set_metrics_if_expected_available(
         metrics,
         "visually_active_gate",
         _collection_or_none(expected_raw, "visually_active_gates"),
-        _collection_or_none(predicted_raw, "visually_active_gates"),
+        _collection_or_empty(predicted_raw, "visually_active_gates"),
     )
-    _add_set_metrics_if_available(
+    _add_required_set_metrics_if_expected_available(
         metrics,
         "visible_channel",
         _collection_or_none(expected_raw, "visible_colored_channels"),
-        _collection_or_none(predicted_raw, "visible_colored_channels"),
+        _collection_or_empty(predicted_raw, "visible_colored_channels"),
     )
     return metrics
 
 
 def _derived_metrics(
-    expected_derived: Mapping[str, object] | None,
+    expected_derived_labels: Mapping[str, object] | None,
     predicted_derived: Mapping[str, object],
 ) -> dict[str, float]:
-    if expected_derived is None:
+    if expected_derived_labels is None:
         return {}
 
     metrics: dict[str, float] = {}
     _add_required_set_metrics_if_expected_available(
         metrics,
         "derived_center",
-        _collection_or_none(expected_derived, "defined_centers"),
+        _collection_or_none(expected_derived_labels, "defined_centers"),
         _collection_or_empty(predicted_derived, "defined_centers"),
     )
     _add_required_set_metrics_if_expected_available(
         metrics,
         "active_gate",
-        _collection_or_none(expected_derived, "active_gates"),
+        _collection_or_none(expected_derived_labels, "active_gates"),
         _collection_or_empty(predicted_derived, "active_gates"),
     )
     _add_required_set_metrics_if_expected_available(
         metrics,
         "active_channel",
-        _collection_or_none(expected_derived, "active_channels"),
+        _collection_or_none(expected_derived_labels, "active_channels"),
         _collection_or_empty(predicted_derived, "active_channels"),
     )
     return metrics
-
-
-def _add_set_metrics_if_available(
-    metrics: dict[str, float],
-    prefix: str,
-    expected_values: tuple[object, ...] | None,
-    predicted_values: tuple[object, ...] | None,
-) -> None:
-    if expected_values is None or predicted_values is None:
-        return
-    precision, recall, f1 = precision_recall_f1(expected_values, predicted_values)
-    metrics[f"{prefix}_precision"] = precision
-    metrics[f"{prefix}_recall"] = recall
-    metrics[f"{prefix}_f1"] = f1
 
 
 def _add_required_set_metrics_if_expected_available(
@@ -391,13 +363,13 @@ def _add_required_set_metrics_if_expected_available(
 
 
 def _basic_info_metrics(
-    expected_derived: Mapping[str, object] | None,
+    expected_derived_labels: Mapping[str, object] | None,
     predicted_derived: Mapping[str, object],
 ) -> dict[str, float]:
-    if expected_derived is None:
+    if expected_derived_labels is None:
         return {}
 
-    expected_basic_info = _basic_info_mapping(expected_derived)
+    expected_basic_info = _basic_info_mapping(expected_derived_labels)
     predicted_basic_info = _basic_info_mapping(predicted_derived)
     if expected_basic_info is None:
         return {}
@@ -420,29 +392,37 @@ def _basic_info_metrics(
 
 
 def _basic_info_mapping(source: Mapping[str, object]) -> Mapping[str, object] | None:
-    nested = _mapping_or_none(source.get("basic_info"))
-    if nested is not None:
-        return nested
-    if any(field_name in source for field_name in BASIC_INFO_FIELDS):
-        return source
-    return None
+    return _mapping_or_none(source.get("basic_info"))
 
 
 def _expected_warnings(golden: Mapping[str, object]) -> tuple[object, ...]:
     validation_result = _mapping_or_none(golden.get("expected_validation_result"))
-    if validation_result is not None and "warnings" in validation_result:
-        return _tuple_or_empty(validation_result.get("warnings"))
-    if "expected_warning_codes" in golden:
-        return _tuple_or_empty(golden.get("expected_warning_codes"))
-    return _tuple_or_empty(golden.get("warnings"))
+    if validation_result is None:
+        return ()
+    return _tuple_or_empty(validation_result.get("warnings"))
 
 
 def _prediction_warnings(prediction: Mapping[str, object]) -> tuple[object, ...]:
-    for key in ("validation_result", "validation"):
-        validation_result = _mapping_or_none(prediction.get(key))
-        if validation_result is not None and "warnings" in validation_result:
-            return _tuple_or_empty(validation_result.get("warnings"))
-    return _tuple_or_empty(prediction.get("warnings"))
+    validation_result = _mapping_or_none(prediction.get("validation_result"))
+    if validation_result is None:
+        return ()
+    return _tuple_or_empty(validation_result.get("warnings"))
+
+
+def _expected_validation_is_valid(golden: Mapping[str, object]) -> bool | None:
+    validation_result = _mapping_or_none(golden.get("expected_validation_result"))
+    if validation_result is None:
+        return None
+    return _bool_or_none(validation_result.get("is_valid"))
+
+
+def _prediction_validation_is_valid(
+    prediction: Mapping[str, object],
+) -> bool | None:
+    validation_result = _mapping_or_none(prediction.get("validation_result"))
+    if validation_result is None:
+        return None
+    return _bool_or_none(validation_result.get("is_valid"))
 
 
 def _warning_codes(warnings: Iterable[object]) -> set[str]:
@@ -454,8 +434,6 @@ def _warning_codes(warnings: Iterable[object]) -> set[str]:
 
 
 def _warning_code(warning: object) -> str | None:
-    if isinstance(warning, str):
-        return warning
     if isinstance(warning, Mapping):
         code = warning.get("code")
         return _string_value(code)
@@ -569,12 +547,9 @@ def _collection_or_none(
     value = source[field_name]
     if value is None:
         return None
-    if isinstance(value, str):
-        return (value,)
-    try:
-        return tuple(value)  # type: ignore[arg-type]
-    except TypeError:
+    if not isinstance(value, (list, tuple, set, frozenset)):
         return None
+    return tuple(value)
 
 
 def _collection_or_empty(
@@ -591,14 +566,9 @@ def _mapping_or_none(value: object) -> Mapping[str, object] | None:
 
 
 def _tuple_or_empty(value: object) -> tuple[object, ...]:
-    if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    try:
-        return tuple(value)  # type: ignore[arg-type]
-    except TypeError:
-        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    return ()
 
 
 def _value(source: Mapping[str, object], field_name: str) -> object:
@@ -623,7 +593,6 @@ def _bool_or_none(value: object) -> bool | None:
 
 
 __all__ = [
-    "MetricResult",
     "EvaluationCaseResult",
     "EvaluationSummary",
     "evaluate_bodygraph_prediction",

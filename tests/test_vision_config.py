@@ -1,4 +1,5 @@
 import os
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,6 @@ VISION_ENV_VARS = (
     "HD_VISION_MODEL",
     "HD_VISION_REASONING_EFFORT",
     "HD_VISION_REAL_API",
-    "HD_BODYGRAPH_SAMPLE_DIR",
-    "HD_BODYGRAPH_GOLDEN_LABELS",
 )
 
 
@@ -28,11 +27,13 @@ def test_default_config_values() -> None:
     assert config.model == "gpt-5.5"
     assert config.reasoning_effort == "high"
     assert config.real_api_enabled is False
-    assert config.bodygraph_sample_dir == Path("data/bodygraph_samples/images")
-    assert config.golden_labels_path == Path(
-        "data/bodygraph_samples/golden_labels.example.json"
-    )
     assert config.openai_api_key is None
+    assert {field.name for field in fields(VisionConfig)} == {
+        "model",
+        "reasoning_effort",
+        "real_api_enabled",
+        "openai_api_key",
+    }
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", " On "])
@@ -64,15 +65,11 @@ def test_custom_values_are_respected() -> None:
         {
             "HD_VISION_MODEL": "custom-model",
             "HD_VISION_REASONING_EFFORT": "xhigh",
-            "HD_BODYGRAPH_SAMPLE_DIR": "local/samples",
-            "HD_BODYGRAPH_GOLDEN_LABELS": "local/labels.json",
         }
     )
 
     assert config.model == "custom-model"
     assert config.reasoning_effort == "xhigh"
-    assert config.bodygraph_sample_dir == Path("local/samples")
-    assert config.golden_labels_path == Path("local/labels.json")
 
 
 @pytest.mark.parametrize("value", ["none", "low", "medium", "high", "xhigh"])
@@ -105,8 +102,6 @@ def test_config_repr_redacts_api_key() -> None:
         model="model",
         reasoning_effort="high",
         real_api_enabled=True,
-        bodygraph_sample_dir=Path("samples"),
-        golden_labels_path=Path("labels.json"),
         openai_api_key=secret,
     )
 
@@ -124,8 +119,6 @@ def test_runtime_loads_values_from_explicit_dotenv_path(
                 "HD_VISION_MODEL=dotenv-model",
                 "HD_VISION_REASONING_EFFORT=xhigh",
                 "HD_VISION_REAL_API=1",
-                "HD_BODYGRAPH_SAMPLE_DIR=dotenv/samples",
-                "HD_BODYGRAPH_GOLDEN_LABELS=dotenv/labels.json",
                 "OPENAI_API_KEY=fake-dotenv-key",
             )
         ),
@@ -139,8 +132,6 @@ def test_runtime_loads_values_from_explicit_dotenv_path(
         assert config.model == "dotenv-model"
         assert config.reasoning_effort == "xhigh"
         assert config.real_api_enabled is True
-        assert config.bodygraph_sample_dir == Path("dotenv/samples")
-        assert config.golden_labels_path == Path("dotenv/labels.json")
         assert config.openai_api_key == "fake-dotenv-key"
     finally:
         for name in VISION_ENV_VARS:

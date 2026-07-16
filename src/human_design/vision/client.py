@@ -15,6 +15,23 @@ class VisionClientError(RuntimeError):
     """Raised when BodyGraph raw extraction cannot be completed safely."""
 
 
+_PLANETARY_FIELDS = (
+    "sun",
+    "earth",
+    "north_node",
+    "south_node",
+    "moon",
+    "mercury",
+    "venus",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+)
+
+
 def load_mock_response(path: Path) -> str:
     """Read a sanitized local raw JSON response fixture."""
     if not path.is_file():
@@ -74,7 +91,7 @@ def extract_bodygraph_raw_json_with_real_api(
 
     try:
         from openai import OpenAI
-        from openai.types.responses import ResponseInputParam
+        from openai.types.responses import ResponseInputParam, ResponseTextConfigParam
         from openai.types.shared_params import Reasoning
     except ImportError as exc:
         raise VisionClientError(
@@ -122,11 +139,24 @@ def extract_bodygraph_raw_json_with_real_api(
                 }
             ],
         )
+        text_config = cast(
+            ResponseTextConfigParam,
+            {
+                "format": {
+                    "type": "json_schema",
+                    "name": "bodygraph_raw_extraction",
+                    "strict": True,
+                    "schema": _bodygraph_raw_extraction_schema(),
+                }
+            },
+        )
 
         response = client.responses.create(
             model=config.model,
             reasoning=reasoning,
             input=response_input,
+            text=text_config,
+            store=False,
         )
 
     except OSError as exc:
@@ -154,6 +184,79 @@ def _require_image_file(image_path: Path) -> None:
         raise VisionClientError(
             f"Image file not found: {image_path}"
         )
+
+
+def _bodygraph_raw_extraction_schema() -> dict[str, object]:
+    activation_properties = {
+        field_name: {"type": ["string", "null"]}
+        for field_name in _PLANETARY_FIELDS
+    }
+    activation_column = {
+        "type": "object",
+        "properties": activation_properties,
+        "required": list(_PLANETARY_FIELDS),
+        "additionalProperties": False,
+    }
+    uncertain_confidence = {
+        "type": "number",
+        "minimum": 0.0,
+        "maximum": 1.0,
+    }
+    top_level_fields = (
+        "personality",
+        "design",
+        "visually_defined_centers",
+        "visually_active_gates",
+        "visible_colored_channels",
+        "uncertain_items",
+    )
+    return {
+        "type": "object",
+        "properties": {
+            "personality": activation_column,
+            "design": activation_column,
+            "visually_defined_centers": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "visually_active_gates": {
+                "type": "array",
+                "items": {"type": "integer"},
+            },
+            "visible_colored_channels": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "uncertain_items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field_path": {"type": "string"},
+                        "observed_value": {
+                            "anyOf": [
+                                {"type": "string"},
+                                {"type": "integer"},
+                                {"type": "number"},
+                                {"type": "null"},
+                            ]
+                        },
+                        "reason": {"type": "string"},
+                        "confidence": uncertain_confidence,
+                    },
+                    "required": [
+                        "field_path",
+                        "observed_value",
+                        "reason",
+                        "confidence",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": list(top_level_fields),
+        "additionalProperties": False,
+    }
 
 
 __all__ = [

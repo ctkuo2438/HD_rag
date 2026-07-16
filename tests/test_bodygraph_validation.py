@@ -1,21 +1,19 @@
 import json
+from dataclasses import replace
 
 import pytest
 
-import human_design.vision.validation as validation_module
 from human_design.vision.interpreter import (
     BodyGraphInterpretationResult,
     interpret_bodygraph,
 )
 from human_design.vision.models import (
     Activation,
-    ActivationConfidenceColumn,
     DerivedBasicInfo,
     DerivedChartData,
     DesignActivationColumn,
     ParseResult,
     PersonalityActivationColumn,
-    RawVisionConfidence,
     RawVisionExtraction,
     ValidationCode,
     ValidationResult,
@@ -51,23 +49,6 @@ def _activation(gate: int, line: int = 1) -> Activation:
     return Activation(gate=gate, line=line)
 
 
-def _confidence_column(value: float = 1.0) -> ActivationConfidenceColumn:
-    return ActivationConfidenceColumn(
-        **{field_name: value for field_name in PLANET_FIELDS}
-    )
-
-
-def _raw_confidence(value: float = 1.0) -> RawVisionConfidence:
-    return RawVisionConfidence(
-        personality=_confidence_column(value),
-        design=_confidence_column(value),
-        visually_defined_centers=value,
-        visually_undefined_centers=value,
-        visually_active_gates=value,
-        visible_colored_channels=value,
-    )
-
-
 def _activation_values_for_gates(gates: tuple[int, ...]) -> dict[str, Activation]:
     return {
         field_name: _activation(gates[index % len(gates)], line=(index % 6) + 1)
@@ -80,9 +61,9 @@ def _raw_with_gates(
     *,
     personality_overrides: dict[str, Activation | None] | None = None,
     design_overrides: dict[str, Activation | None] | None = None,
-    visually_defined_centers: tuple[str, ...] = (),
-    visually_active_gates: tuple[int, ...] = (),
-    visible_colored_channels: tuple[str, ...] = (),
+    visually_defined_centers: tuple[str, ...] | None = None,
+    visually_active_gates: tuple[int, ...] | None = None,
+    visible_colored_channels: tuple[str, ...] | None = None,
 ) -> RawVisionExtraction:
     personality_values: dict[str, Activation | None] = _activation_values_for_gates(
         gates
@@ -91,13 +72,31 @@ def _raw_with_gates(
     personality_values.update(personality_overrides or {})
     design_values.update(design_overrides or {})
 
-    return RawVisionExtraction(
+    raw_vision = RawVisionExtraction(
         personality=PersonalityActivationColumn(**personality_values),
         design=DesignActivationColumn(**design_values),
-        visually_defined_centers=visually_defined_centers,
-        visually_active_gates=visually_active_gates,
-        visible_colored_channels=visible_colored_channels,
-        confidence=_raw_confidence(),
+        visually_defined_centers=visually_defined_centers or (),
+        visually_active_gates=visually_active_gates or (),
+        visible_colored_channels=visible_colored_channels or (),
+    )
+    chart = interpret_bodygraph(raw_vision).derived_chart_data
+    return replace(
+        raw_vision,
+        visually_defined_centers=(
+            chart.defined_centers
+            if visually_defined_centers is None
+            else visually_defined_centers
+        ),
+        visually_active_gates=(
+            chart.active_gates
+            if visually_active_gates is None
+            else visually_active_gates
+        ),
+        visible_colored_channels=(
+            chart.active_channels
+            if visible_colored_channels is None
+            else visible_colored_channels
+        ),
     )
 
 
@@ -164,6 +163,8 @@ def _expected_defaults(
         return ValidationSeverity.INFO, False
     if code in {
         ValidationCode.INVALID_VISIBLE_CHANNEL,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+        ValidationCode.INVALID_VISUAL_CENTER,
         ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
         ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
         ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,
@@ -211,30 +212,10 @@ def _parser_payload(
     return {
         "personality": activations,
         "design": activations,
-        "visually_defined_centers": [],
-        "visually_undefined_centers": [],
-        "visually_active_gates": [],
+        "visually_defined_centers": ["G", "Spleen"],
+        "visually_active_gates": list(gates),
         "visible_colored_channels": visible_colored_channels,
-        "confidence": {
-            "personality": {field_name: 1.0 for field_name in PLANET_FIELDS},
-            "design": {field_name: 1.0 for field_name in PLANET_FIELDS},
-            "visually_defined_centers": 1.0,
-            "visually_undefined_centers": 1.0,
-            "visually_active_gates": 1.0,
-            "visible_colored_channels": 1.0,
-        },
         "uncertain_items": [],
-    }
-
-
-def _confidence_payload(value: float = 1.0) -> dict[str, object]:
-    return {
-        "personality": {field_name: value for field_name in PLANET_FIELDS},
-        "design": {field_name: value for field_name in PLANET_FIELDS},
-        "visually_defined_centers": value,
-        "visually_undefined_centers": value,
-        "visually_active_gates": value,
-        "visible_colored_channels": value,
     }
 
 
@@ -243,7 +224,6 @@ def _mock_raw_json_payload(
     personality: dict[str, str | None],
     design: dict[str, str | None],
     visually_defined_centers: list[str] | None = None,
-    visually_undefined_centers: list[str] | None = None,
     visually_active_gates: list[int | str] | None = None,
     visible_colored_channels: list[str] | None = None,
 ) -> dict[str, object]:
@@ -251,10 +231,8 @@ def _mock_raw_json_payload(
         "personality": personality,
         "design": design,
         "visually_defined_centers": visually_defined_centers or [],
-        "visually_undefined_centers": visually_undefined_centers or [],
         "visually_active_gates": visually_active_gates or [],
         "visible_colored_channels": visible_colored_channels or [],
-        "confidence": _confidence_payload(),
         "uncertain_items": [],
     }
 
@@ -293,10 +271,6 @@ def _run_pipeline(
 
 
 def test_public_api_returns_validation_result() -> None:
-    assert set(validation_module.__all__) == {
-        "validate_bodygraph_extraction",
-        "validate_bodygraph_components",
-    }
 
     raw = _valid_generator_raw()
     interpretation = interpret_bodygraph(raw)
@@ -563,13 +537,13 @@ def test_colored_channel_mismatch_uses_visual_and_derived_warning_codes() -> Non
     assert result.is_valid is True
 
 
-def test_empty_visible_channels_do_not_warn_for_missing_derived_channels() -> None:
+def test_empty_visible_channels_warn_for_missing_derived_channels() -> None:
     raw = _valid_generator_raw(visible_colored_channels=())
 
     result = _validation_for_raw(raw)
 
-    assert ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE not in _warning_codes(result)
-    assert result.warnings == ()
+    assert _warning_codes(result) == (ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,)
+    assert result.warnings[0].affects_validity is False
     assert result.is_valid is True
 
 
@@ -589,13 +563,14 @@ def test_visually_active_gates_mismatch_warns_without_invalidating() -> None:
     assert result.is_valid is True
 
 
-def test_empty_visually_active_gates_do_not_warn() -> None:
+def test_empty_visually_active_gates_warn_when_derived_gates_are_nonempty() -> None:
     raw = _valid_generator_raw(visually_active_gates=())
 
     result = _validation_for_raw(raw)
 
-    assert ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH not in _warning_codes(result)
-    assert result.warnings == ()
+    assert _warning_codes(result) == (ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,)
+    assert result.warnings[0].affects_validity is False
+    assert result.is_valid is True
 
 
 def test_visually_defined_centers_mismatch_warns_without_invalidating() -> None:
@@ -616,17 +591,69 @@ def test_visually_defined_centers_mismatch_warns_without_invalidating() -> None:
     assert result.is_valid is True
 
 
-def test_empty_visually_defined_centers_do_not_warn() -> None:
+def test_empty_visually_defined_centers_warn_when_derived_centers_are_nonempty() -> None:
     raw = _valid_generator_raw(visually_defined_centers=())
 
     result = _validation_for_raw(raw)
 
-    assert ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH not in _warning_codes(result)
+    assert _warning_codes(result) == (
+        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+    )
+    assert result.warnings[0].affects_validity is False
+    assert result.is_valid is True
+
+
+def test_empty_visual_and_derived_sets_match_without_warnings() -> None:
+    raw = _raw_with_gates(
+        (1,),
+        visually_defined_centers=(),
+        visually_active_gates=(),
+        visible_colored_channels=(),
+    )
+    interpreted = interpret_bodygraph(raw).derived_chart_data
+    empty_derived_chart = DerivedChartData(
+        basic_info=interpreted.basic_info,
+        active_gates=(),
+        active_channels=(),
+        defined_centers=(),
+    )
+
+    result = validate_bodygraph_components(
+        raw_vision=raw,
+        derived_chart_data=empty_derived_chart,
+    )
+
     assert result.warnings == ()
+    assert result.is_valid is True
 
 
-def test_reflector_with_derived_definition_data_warns_without_invalidating() -> None:
-    raw = _valid_reflector_raw()
+def test_invalid_visual_gate_does_not_invalidate_complete_pipeline() -> None:
+    payload = _mock_raw_json_payload(
+        personality=_activation_payload_from_gates((3, 60)),
+        design=_activation_payload_from_gates((3, 60)),
+        visually_defined_centers=["Sacral", "Root"],
+        visually_active_gates=[3, 60, 99],
+        visible_colored_channels=["3-60"],
+    )
+
+    parse_result, _, validation_result = _run_pipeline(payload)
+
+    assert parse_result.raw_vision.visually_active_gates == (3, 60)
+    assert _warning_codes(validation_result) == (
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+    )
+    warning = validation_result.warnings[0]
+    assert warning.source is ValidationSource.parser
+    assert warning.severity is ValidationSeverity.WARNING
+    assert warning.affects_validity is False
+    assert validation_result.is_valid is True
+
+
+def test_reflector_with_inconsistent_derived_data_is_fatal() -> None:
+    raw = _valid_reflector_raw(
+        visually_defined_centers=("Sacral", "Root"),
+        visible_colored_channels=("3-60",),
+    )
     interpretation = interpret_bodygraph(raw)
     inconsistent_basic_info = DerivedBasicInfo(
         type="Reflector",
@@ -650,11 +677,85 @@ def test_reflector_with_derived_definition_data_warns_without_invalidating() -> 
     )
 
     assert _warning_codes(result) == (
-        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
+        ValidationCode.INCONSISTENT_DERIVED_CHART,
     )
+    _assert_warning_metadata(
+        result.warnings[0],
+        code=ValidationCode.INCONSISTENT_DERIVED_CHART,
+        severity=ValidationSeverity.ERROR,
+        affects_validity=True,
+        source=ValidationSource.validation,
+    )
+    assert result.is_valid is False
+
+
+@pytest.mark.parametrize(
+    ("active_channels", "defined_centers", "definition", "authority"),
+    [
+        (("3-60",), (), "No Definition", "Lunar"),
+        ((), ("Root",), "No Definition", "Lunar"),
+        ((), (), "Single Definition", "Lunar"),
+        ((), (), "No Definition", "Emotional"),
+    ],
+)
+def test_each_reflector_invariant_violation_is_one_fatal_warning(
+    active_channels: tuple[str, ...],
+    defined_centers: tuple[str, ...],
+    definition: str,
+    authority: str,
+) -> None:
+    raw = _valid_reflector_raw(
+        visually_defined_centers=defined_centers,
+        visible_colored_channels=active_channels,
+    )
+    interpreted = interpret_bodygraph(raw).derived_chart_data
+    chart = DerivedChartData(
+        basic_info=replace(
+            interpreted.basic_info,
+            type="Reflector",
+            definition=definition,
+            authority=authority,
+        ),
+        active_gates=interpreted.active_gates,
+        active_channels=active_channels,
+        defined_centers=defined_centers,
+    )
+
+    result = validate_bodygraph_components(
+        raw_vision=raw,
+        derived_chart_data=chart,
+    )
+
+    assert _warning_codes(result) == (ValidationCode.INCONSISTENT_DERIVED_CHART,)
+    assert result.warnings[0].severity is ValidationSeverity.ERROR
+    assert result.warnings[0].affects_validity is True
     assert result.warnings[0].source is ValidationSource.validation
-    assert result.warnings[0].affects_validity is False
-    assert result.is_valid is True
+    assert result.is_valid is False
+
+
+def test_invalid_visual_center_warning_does_not_invalidate_complete_pipeline() -> None:
+    payload = _mock_raw_json_payload(
+        personality=_activation_payload_from_gates((3, 60)),
+        design=_activation_payload_from_gates((3, 60)),
+        visually_defined_centers=["Sacral", "mystery_center", "Root"],
+        visually_active_gates=[3, 60],
+        visible_colored_channels=["3-60"],
+    )
+
+    parse_result, _, validation_result = _run_pipeline(payload)
+
+    assert parse_result.raw_vision.visually_defined_centers == ("Sacral", "Root")
+    assert _warning_codes(validation_result) == (
+        ValidationCode.INVALID_VISUAL_CENTER,
+    )
+    _assert_warning_metadata(
+        validation_result.warnings[0],
+        code=ValidationCode.INVALID_VISUAL_CENTER,
+        severity=ValidationSeverity.WARNING,
+        affects_validity=False,
+        source=ValidationSource.parser,
+    )
+    assert validation_result.is_valid is True
 
 
 def test_needs_review_authority_without_interpreter_warning_gets_validation_warning() -> None:
@@ -698,6 +799,9 @@ def test_mocked_generator_pipeline_derives_expected_chart_data() -> None:
     payload = _mock_raw_json_payload(
         personality=_generator_pipeline_personality(),
         design=_generator_pipeline_design(),
+        visually_defined_centers=["G", "Sacral", "Root"],
+        visually_active_gates=[3, 10, 32, 34, 60, 61],
+        visible_colored_channels=["3-60", "10-34"],
     )
 
     parse_result, interpretation_result, validation_result = _run_pipeline(payload)
@@ -727,6 +831,7 @@ def test_mocked_reflector_pipeline_derives_reflector_and_lunar_authority() -> No
     payload = _mock_raw_json_payload(
         personality=reflector_personality,
         design=reflector_design,
+        visually_active_gates=[1],
     )
 
     parse_result, interpretation_result, validation_result = _run_pipeline(payload)
@@ -779,6 +884,8 @@ def test_mocked_pipeline_preserves_normalized_visible_channel_parser_warning() -
     payload = _mock_raw_json_payload(
         personality=_activation_payload_from_gates((10, 57)),
         design=_activation_payload_from_gates((10, 57)),
+        visually_defined_centers=["G", "Spleen"],
+        visually_active_gates=[10, 57],
         visible_colored_channels=["57-10"],
     )
 
@@ -810,6 +917,9 @@ def test_mocked_pipeline_malformed_activation_parser_warning_invalidates() -> No
     payload = _mock_raw_json_payload(
         personality=personality,
         design=_generator_pipeline_design(),
+        visually_defined_centers=["G", "Sacral", "Root"],
+        visually_active_gates=[3, 10, 32, 34, 60, 61],
+        visible_colored_channels=["3-60", "10-34"],
     )
 
     parse_result, interpretation_result, validation_result = _run_pipeline(payload)

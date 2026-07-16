@@ -48,7 +48,6 @@ _PLANETARY_FIELDS = (
 _RAW_VISION_COLLECTION_FIELDS = frozenset(
     (
         "visually_defined_centers",
-        "visually_undefined_centers",
         "visually_active_gates",
         "visible_colored_channels",
     )
@@ -120,63 +119,6 @@ class DesignActivationColumn:
 
 
 @dataclass(frozen=True)
-class ActivationConfidenceColumn:
-    """Per-activation confidence values for all canonical planetary fields."""
-
-    sun: float
-    earth: float
-    north_node: float
-    south_node: float
-    moon: float
-    mercury: float
-    venus: float
-    mars: float
-    jupiter: float
-    saturn: float
-    uranus: float
-    neptune: float
-    pluto: float
-
-    def __post_init__(self) -> None:
-        for field_name in _PLANETARY_FIELDS:
-            confidence = _validate_confidence_value(
-                getattr(self, field_name),
-                field_name,
-            )
-            object.__setattr__(self, field_name, confidence)
-
-
-@dataclass(frozen=True)
-class RawVisionConfidence:
-    """Confidence metadata for raw Vision extraction fields."""
-
-    personality: ActivationConfidenceColumn
-    design: ActivationConfidenceColumn
-    visually_defined_centers: float
-    visually_undefined_centers: float
-    visually_active_gates: float
-    visible_colored_channels: float
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.personality, ActivationConfidenceColumn):
-            raise TypeError("personality confidence must be ActivationConfidenceColumn")
-        if not isinstance(self.design, ActivationConfidenceColumn):
-            raise TypeError("design confidence must be ActivationConfidenceColumn")
-
-        for field_name in (
-            "visually_defined_centers",
-            "visually_undefined_centers",
-            "visually_active_gates",
-            "visible_colored_channels",
-        ):
-            confidence = _validate_confidence_value(
-                getattr(self, field_name),
-                field_name,
-            )
-            object.__setattr__(self, field_name, confidence)
-
-
-@dataclass(frozen=True)
 class UncertainItem:
     """A raw Vision observation the model could not read confidently."""
 
@@ -204,9 +146,7 @@ class RawVisionExtraction:
 
     personality: PersonalityActivationColumn
     design: DesignActivationColumn
-    confidence: RawVisionConfidence
     visually_defined_centers: tuple[str, ...] = field(default_factory=tuple)
-    visually_undefined_centers: tuple[str, ...] = field(default_factory=tuple)
     visually_active_gates: tuple[int, ...] = field(default_factory=tuple)
     visible_colored_channels: tuple[str, ...] = field(default_factory=tuple)
     uncertain_items: tuple[UncertainItem, ...] = field(default_factory=tuple)
@@ -216,22 +156,10 @@ class RawVisionExtraction:
             raise TypeError("personality must be PersonalityActivationColumn")
         if not isinstance(self.design, DesignActivationColumn):
             raise TypeError("design must be DesignActivationColumn")
-        if not isinstance(self.confidence, RawVisionConfidence):
-            raise TypeError("confidence must be RawVisionConfidence")
-
         object.__setattr__(
             self,
             "visually_defined_centers",
             _typed_tuple(self.visually_defined_centers, str, "visually_defined_centers"),
-        )
-        object.__setattr__(
-            self,
-            "visually_undefined_centers",
-            _typed_tuple(
-                self.visually_undefined_centers,
-                str,
-                "visually_undefined_centers",
-            ),
         )
         object.__setattr__(
             self,
@@ -318,6 +246,8 @@ class ValidationCode(StrEnum):
 
     VISIBLE_CHANNEL_NORMALIZED = "VISIBLE_CHANNEL_NORMALIZED"
     INVALID_VISIBLE_CHANNEL = "INVALID_VISIBLE_CHANNEL"
+    INVALID_VISUALLY_ACTIVE_GATE = "INVALID_VISUALLY_ACTIVE_GATE"
+    INVALID_VISUAL_CENTER = "INVALID_VISUAL_CENTER"
     VISIBLE_CHANNEL_NOT_DERIVED = "VISIBLE_CHANNEL_NOT_DERIVED"
     DERIVED_CHANNEL_NOT_VISIBLE = "DERIVED_CHANNEL_NOT_VISIBLE"
     VISUALLY_ACTIVE_GATES_MISMATCH = "VISUALLY_ACTIVE_GATES_MISMATCH"
@@ -329,6 +259,7 @@ class ValidationCode(StrEnum):
     MALFORMED_ACTIVATION = "MALFORMED_ACTIVATION"
     INVALID_ACTIVATION_GATE = "INVALID_ACTIVATION_GATE"
     INVALID_ACTIVATION_LINE = "INVALID_ACTIVATION_LINE"
+    INCONSISTENT_DERIVED_CHART = "INCONSISTENT_DERIVED_CHART"
 
 
 @dataclass(frozen=True)
@@ -487,6 +418,8 @@ def _validate_observed_value(value: object) -> None:
         return
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         raise TypeError("observed_value must be str, int, float, or None")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("observed_value float must be finite")
 
 
 def _typed_tuple(
@@ -535,8 +468,6 @@ __all__ = [
     "Activation",
     "PersonalityActivationColumn",
     "DesignActivationColumn",
-    "ActivationConfidenceColumn",
-    "RawVisionConfidence",
     "UncertainItem",
     "RawVisionExtraction",
     "DerivedBasicInfo",

@@ -203,16 +203,15 @@ def _visible_channel_warnings(
                 )
             )
 
-    if visible_channels:
-        visible_channel_set = set(visible_channels)
-        for index, channel in enumerate(derived_chart_data.active_channels):
-            if channel not in visible_channel_set:
-                warnings.append(
-                    _validation_warning(
-                        ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
-                        f"active_channels[{index}]",
-                    )
+    visible_channel_set = set(visible_channels)
+    for index, channel in enumerate(derived_chart_data.active_channels):
+        if channel not in visible_channel_set:
+            warnings.append(
+                _validation_warning(
+                    ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
+                    f"active_channels[{index}]",
                 )
+            )
 
     return tuple(warnings)
 
@@ -221,8 +220,6 @@ def _visual_gate_warnings(
     raw_vision: RawVisionExtraction,
     derived_chart_data: DerivedChartData,
 ) -> tuple[ValidationWarning, ...]:
-    if not raw_vision.visually_active_gates:
-        return ()
     if set(raw_vision.visually_active_gates) == set(derived_chart_data.active_gates):
         return ()
     return (
@@ -237,8 +234,6 @@ def _visual_center_warnings(
     raw_vision: RawVisionExtraction,
     derived_chart_data: DerivedChartData,
 ) -> tuple[ValidationWarning, ...]:
-    if not raw_vision.visually_defined_centers:
-        return ()
     visual_centers = _center_set(raw_vision.visually_defined_centers)
     derived_centers = _center_set(derived_chart_data.defined_centers)
     if visual_centers == derived_centers:
@@ -267,12 +262,14 @@ def _reflector_consistency_warnings(
     if (
         not derived_chart_data.active_channels
         and not derived_chart_data.defined_centers
+        and derived_chart_data.basic_info.definition == "No Definition"
+        and derived_chart_data.basic_info.authority == "Lunar"
     ):
         return ()
     return (
         _validation_warning(
-            ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
-            "derived_chart_data.basic_info.type",
+            ValidationCode.INCONSISTENT_DERIVED_CHART,
+            "derived_chart_data",
         ),
     )
 
@@ -315,6 +312,8 @@ def _warning_defaults(code: ValidationCode) -> tuple[ValidationSeverity, bool]:
         return ValidationSeverity.INFO, False
     if code in {
         ValidationCode.INVALID_VISIBLE_CHANNEL,
+        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
+        ValidationCode.INVALID_VISUAL_CENTER,
         ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
         ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
         ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,

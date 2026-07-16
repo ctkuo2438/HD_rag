@@ -30,44 +30,7 @@
     "pluto": "45.5"
   },
   "visually_defined_centers": ["Throat", "G", "Ego", "Sacral", "Spleen", "Root"],
-  "visually_undefined_centers": ["Head", "Ajna", "Solar Plexus"],
   "visually_active_gates": [2, 3, 5, 10, 14, 15, 20, 21, 32, 34, 35, 42, 45, 57, 60, 61, 62],
   "visible_colored_channels": ["2-14", "3-60", "5-15", "10-20", "10-34", "10-57", "20-34", "20-57", "21-45", "34-57"],
-  "confidence": {
-    "personality": {
-      "sun": 1.0,
-      "earth": 1.0,
-      "north_node": 1.0,
-      "south_node": 1.0,
-      "moon": 1.0,
-      "mercury": 1.0,
-      "venus": 1.0,
-      "mars": 1.0,
-      "jupiter": 1.0,
-      "saturn": 1.0,
-      "uranus": 1.0,
-      "neptune": 1.0,
-      "pluto": 1.0
-    },
-    "design": {
-      "sun": 1.0,
-      "earth": 1.0,
-      "north_node": 1.0,
-      "south_node": 1.0,
-      "moon": 1.0,
-      "mercury": 1.0,
-      "venus": 1.0,
-      "mars": 1.0,
-      "jupiter": 1.0,
-      "saturn": 1.0,
-      "uranus": 1.0,
-      "neptune": 1.0,
-      "pluto": 1.0
-    },
-    "visually_defined_centers": 1.0,
-    "visually_undefined_centers": 1.0,
-    "visually_active_gates": 1.0,
-    "visible_colored_channels": 1.0
-  },
   "uncertain_items": []
 }

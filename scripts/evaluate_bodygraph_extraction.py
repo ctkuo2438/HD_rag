@@ -16,6 +16,47 @@ from human_design.vision.evaluation import (
 )
 
 
+_PLANETARY_FIELDS = {
+    "sun",
+    "earth",
+    "north_node",
+    "south_node",
+    "moon",
+    "mercury",
+    "venus",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+}
+_RAW_LABEL_FIELDS = {
+    "personality",
+    "design",
+    "visually_defined_centers",
+    "visually_active_gates",
+    "visible_colored_channels",
+    "uncertain_items",
+}
+_DERIVED_LABEL_FIELDS = {
+    "basic_info",
+    "active_gates",
+    "active_channels",
+    "defined_centers",
+}
+_BASIC_INFO_FIELDS = {
+    "type",
+    "authority",
+    "profile",
+    "strategy",
+    "definition",
+    "not_self_theme",
+    "signature",
+}
+_WARNING_FIELDS = {"code", "message", "severity", "affects_validity", "source"}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run offline evaluation from saved golden labels and predictions."""
     parser = _build_parser()
@@ -85,65 +126,229 @@ def _threshold_arg(value: str) -> tuple[str, float]:
 
 def _load_golden_cases(path: Path) -> list[Mapping[str, object]]:
     payload = _load_json(path)
-    if isinstance(payload, list):
-        return [_require_mapping(item, "golden case") for item in payload]
-    if isinstance(payload, Mapping):
-        cases = payload.get("cases")
-        if isinstance(cases, list):
-            return [_require_mapping(item, "golden case") for item in cases]
-    raise ValueError("golden labels JSON must be a list or object with a cases list")
+    root = _require_mapping(payload, "golden labels")
+    _require_exact_keys(
+        root,
+        {
+            "schema_version",
+            "documentation",
+            "recommended_sample_coverage",
+            "cases",
+        },
+        "golden labels",
+    )
+    if root["schema_version"] != "phase2_golden_labels_v2":
+        raise ValueError("golden labels schema_version must be phase2_golden_labels_v2")
+    _require_mapping(root["documentation"], "golden labels documentation")
+    _require_mapping(
+        root["recommended_sample_coverage"],
+        "golden labels recommended_sample_coverage",
+    )
+    cases = root["cases"]
+    if not isinstance(cases, list):
+        raise ValueError("golden labels cases must be a list")
+
+    validated_cases: list[Mapping[str, object]] = []
+    seen_case_ids: set[str] = set()
+    for index, item in enumerate(cases):
+        case = _validate_golden_case(item, index)
+        case_id = case["case_id"]
+        if case_id in seen_case_ids:
+            raise ValueError(f"duplicate golden case_id: {case_id}")
+        seen_case_ids.add(case_id)
+        validated_cases.append(case)
+    return validated_cases
 
 
 def _load_predictions(path: Path) -> dict[str, Mapping[str, object]]:
     payload = _load_json(path)
-    if isinstance(payload, Mapping):
-        nested_predictions = payload.get("predictions")
-        if isinstance(nested_predictions, Mapping):
-            return _prediction_mapping(nested_predictions)
+    root = _require_mapping(payload, "predictions")
+    _require_exact_keys(root, {"schema_version", "predictions"}, "predictions")
+    if root["schema_version"] != "phase2_predictions_v1":
+        raise ValueError("predictions schema_version must be phase2_predictions_v1")
+    entries = root["predictions"]
+    if not isinstance(entries, list):
+        raise ValueError("predictions must be a list")
 
-        cases = payload.get("cases")
-        if isinstance(cases, list):
-            return _prediction_sequence(cases)
-
-        if isinstance(payload.get("case_id"), str):
-            return {payload["case_id"]: payload}
-
-        return _prediction_mapping(payload)
-
-    if isinstance(payload, list):
-        return _prediction_sequence(payload)
-
-    raise ValueError("predictions JSON must be a mapping or list")
+    normalized: dict[str, Mapping[str, object]] = {}
+    for index, value in enumerate(entries):
+        prediction = _require_mapping(value, f"predictions[{index}]")
+        _require_exact_keys(
+            prediction,
+            {"case_id", "raw_vision", "derived_chart_data", "validation_result"},
+            f"predictions[{index}]",
+        )
+        case_id = prediction["case_id"]
+        if not isinstance(case_id, str) or not case_id:
+            raise ValueError(f"predictions[{index}].case_id must be a non-empty string")
+        if case_id in normalized:
+            raise ValueError(f"duplicate prediction case_id: {case_id}")
+        _require_mapping(prediction["raw_vision"], f"predictions[{index}].raw_vision")
+        _require_mapping(
+            prediction["derived_chart_data"],
+            f"predictions[{index}].derived_chart_data",
+        )
+        _require_mapping(
+            prediction["validation_result"],
+            f"predictions[{index}].validation_result",
+        )
+        normalized[case_id] = prediction
+    return normalized
 
 
 def _load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _prediction_mapping(
-    predictions: Mapping[str, object],
-) -> dict[str, Mapping[str, object]]:
-    normalized: dict[str, Mapping[str, object]] = {}
-    for case_id, prediction in predictions.items():
-        normalized[case_id] = _require_mapping(prediction, "prediction")
-    return normalized
-
-
-def _prediction_sequence(cases: Sequence[object]) -> dict[str, Mapping[str, object]]:
-    normalized: dict[str, Mapping[str, object]] = {}
-    for index, prediction in enumerate(cases):
-        prediction_mapping = _require_mapping(prediction, "prediction")
-        case_id = prediction_mapping.get("case_id")
-        if not isinstance(case_id, str) or not case_id:
-            case_id = f"case_{index + 1}"
-        normalized[case_id] = prediction_mapping
-    return normalized
-
-
 def _require_mapping(value: object, label: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be a JSON object")
     return value
+
+
+def _require_exact_keys(
+    value: Mapping[str, object],
+    expected: set[str],
+    label: str,
+) -> None:
+    missing = expected - set(value)
+    if missing:
+        raise ValueError(f"{label} missing required field: {sorted(missing)[0]}")
+    extra = set(value) - expected
+    if extra:
+        raise ValueError(f"{label} has unexpected field: {sorted(extra)[0]}")
+
+
+def _validate_golden_case(value: object, index: int) -> Mapping[str, object]:
+    case = _require_mapping(value, f"golden labels cases[{index}]")
+    _require_exact_keys(
+        case,
+        {
+            "case_id",
+            "image_filename",
+            "label_source",
+            "notes",
+            "evaluation_scope",
+            "expected_raw_labels",
+            "expected_derived_labels",
+            "expected_validation_result",
+        },
+        f"golden labels cases[{index}]",
+    )
+    case_id = case["case_id"]
+    if not isinstance(case_id, str) or not case_id:
+        raise ValueError(f"golden labels cases[{index}].case_id must be a non-empty string")
+    for field in ("image_filename", "label_source", "notes"):
+        if not isinstance(case[field], str):
+            raise ValueError(f"golden labels cases[{index}].{field} must be a string")
+    scope = _require_mapping(
+        case["evaluation_scope"],
+        f"golden labels cases[{index}].evaluation_scope",
+    )
+    _require_exact_keys(
+        scope,
+        {"include_raw_visual_metrics", "include_derived_metrics"},
+        f"golden labels cases[{index}].evaluation_scope",
+    )
+    for flag in ("include_raw_visual_metrics", "include_derived_metrics"):
+        if not isinstance(scope[flag], bool):
+            raise ValueError(
+                f"golden labels cases[{index}].evaluation_scope.{flag} must be a bool"
+            )
+    include_derived_metrics = scope["include_derived_metrics"]
+    derived = case["expected_derived_labels"]
+    if include_derived_metrics and derived is None:
+        raise ValueError(
+            "expected_derived_labels must be an object when "
+            "include_derived_metrics is true"
+        )
+    if not include_derived_metrics and derived is not None:
+        raise ValueError(
+            "expected_derived_labels must be null when "
+            "include_derived_metrics is false"
+        )
+    raw_labels = _require_mapping(
+        case["expected_raw_labels"],
+        f"golden labels cases[{index}].expected_raw_labels",
+    )
+    _require_exact_keys(
+        raw_labels,
+        _RAW_LABEL_FIELDS,
+        f"golden labels cases[{index}].expected_raw_labels",
+    )
+    for column_name in ("personality", "design"):
+        column = _require_mapping(
+            raw_labels[column_name],
+            f"golden labels cases[{index}].expected_raw_labels.{column_name}",
+        )
+        _require_exact_keys(
+            column,
+            _PLANETARY_FIELDS,
+            f"golden labels cases[{index}].expected_raw_labels.{column_name}",
+        )
+    for field in (
+        "visually_defined_centers",
+        "visually_active_gates",
+        "visible_colored_channels",
+        "uncertain_items",
+    ):
+        if not isinstance(raw_labels[field], list):
+            raise ValueError(
+                f"golden labels cases[{index}].expected_raw_labels.{field} must be a list"
+            )
+    if derived is not None:
+        derived_mapping = _require_mapping(
+            derived,
+            f"golden labels cases[{index}].expected_derived_labels",
+        )
+        _require_exact_keys(
+            derived_mapping,
+            _DERIVED_LABEL_FIELDS,
+            f"golden labels cases[{index}].expected_derived_labels",
+        )
+        basic_info = _require_mapping(
+            derived_mapping["basic_info"],
+            f"golden labels cases[{index}].expected_derived_labels.basic_info",
+        )
+        _require_exact_keys(
+            basic_info,
+            _BASIC_INFO_FIELDS,
+            f"golden labels cases[{index}].expected_derived_labels.basic_info",
+        )
+        for field in ("active_gates", "active_channels", "defined_centers"):
+            if not isinstance(derived_mapping[field], list):
+                raise ValueError(
+                    f"golden labels cases[{index}].expected_derived_labels.{field} must be a list"
+                )
+    validation_result = _require_mapping(
+        case["expected_validation_result"],
+        f"golden labels cases[{index}].expected_validation_result",
+    )
+    _require_exact_keys(
+        validation_result,
+        {"is_valid", "warnings"},
+        f"golden labels cases[{index}].expected_validation_result",
+    )
+    if not isinstance(validation_result["is_valid"], bool):
+        raise ValueError(
+            f"golden labels cases[{index}].expected_validation_result.is_valid must be a bool"
+        )
+    warnings = validation_result["warnings"]
+    if not isinstance(warnings, list):
+        raise ValueError(
+            f"golden labels cases[{index}].expected_validation_result.warnings must be a list"
+        )
+    for warning_index, warning_value in enumerate(warnings):
+        warning = _require_mapping(
+            warning_value,
+            f"golden labels cases[{index}].expected_validation_result.warnings[{warning_index}]",
+        )
+        _require_exact_keys(
+            warning,
+            _WARNING_FIELDS,
+            f"golden labels cases[{index}].expected_validation_result.warnings[{warning_index}]",
+        )
+    return case
 
 
 def _print_human_summary(summary: EvaluationSummary) -> None:
@@ -171,7 +376,6 @@ def _summary_payload(summary: EvaluationSummary) -> dict[str, Any]:
             {
                 "case_id": case_result.case_id,
                 "metrics": dict(case_result.metrics),
-                "passed_thresholds": case_result.passed_thresholds,
                 "warnings": list(case_result.warnings),
             }
             for case_result in summary.per_case

@@ -2,14 +2,12 @@
 
 from human_design.vision.models import (
     Activation,
-    ActivationConfidenceColumn,
     BodyGraphExtractionResult,
     DerivedBasicInfo,
     DerivedChartData,
     DesignActivationColumn,
     ParseResult,
     PersonalityActivationColumn,
-    RawVisionConfidence,
     RawVisionExtraction,
     UncertainItem,
     ValidationCode,
@@ -18,13 +16,12 @@ from human_design.vision.models import (
     ValidationSource,
     ValidationWarning,
 )
+from human_design.vision.pipeline import extract_bodygraph
 
 __all__ = [
     "Activation",
     "PersonalityActivationColumn",
     "DesignActivationColumn",
-    "ActivationConfidenceColumn",
-    "RawVisionConfidence",
     "UncertainItem",
     "RawVisionExtraction",
     "DerivedBasicInfo",
@@ -36,4 +33,5 @@ __all__ = [
     "ValidationResult",
     "ParseResult",
     "BodyGraphExtractionResult",
+    "extract_bodygraph",
 ]

@@ -15,10 +15,6 @@ _DEFAULT_REASONING_EFFORT = "high"
 _ALLOWED_REASONING_EFFORTS = frozenset(
     {"none", "low", "medium", "high", "xhigh"}
 )
-_DEFAULT_SAMPLE_DIR = Path("data/bodygraph_samples/images")
-_DEFAULT_GOLDEN_LABELS = Path(
-    "data/bodygraph_samples/golden_labels.example.json"
-)
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 
@@ -30,8 +26,6 @@ class VisionConfig:
     model: str
     reasoning_effort: str
     real_api_enabled: bool
-    bodygraph_sample_dir: Path
-    golden_labels_path: Path
     openai_api_key: str | None = field(default=None, repr=False)
 
 
@@ -53,8 +47,6 @@ def load_vision_config(
     reasoning_effort = _parse_reasoning_effort(
         source.get("HD_VISION_REASONING_EFFORT", "")
     )
-    sample_dir = source.get("HD_BODYGRAPH_SAMPLE_DIR", "").strip()
-    golden_labels = source.get("HD_BODYGRAPH_GOLDEN_LABELS", "").strip()
     api_key = source.get("OPENAI_API_KEY", "").strip() or None
 
     return VisionConfig(
@@ -62,10 +54,6 @@ def load_vision_config(
         reasoning_effort=reasoning_effort,
         real_api_enabled=_parse_real_api_enabled(
             source.get("HD_VISION_REAL_API", "")
-        ),
-        bodygraph_sample_dir=Path(sample_dir) if sample_dir else _DEFAULT_SAMPLE_DIR,
-        golden_labels_path=(
-            Path(golden_labels) if golden_labels else _DEFAULT_GOLDEN_LABELS
         ),
         openai_api_key=api_key,
     )

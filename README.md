@@ -121,7 +121,7 @@ Local BodyGraph image
   -> evaluation or CLI output
 ```
 
-The Vision model extracts raw visible facts only: Personality and Design activations, visual gates, visual channels, visual centers, confidence values, and `uncertain_items`. It must not directly infer type, authority, profile, strategy, definition, not-self theme, or signature.
+The Vision model extracts raw visible facts only: Personality and Design activations, visually defined centers, visual gates, visual channels, and `uncertain_items`. Each uncertain item carries its own numeric confidence. The model must not directly infer type, authority, profile, strategy, definition, not-self theme, or signature.
 
 The deterministic interpreter is the source of final chart data:
 
@@ -141,8 +141,6 @@ OPENAI_API_KEY=
 HD_VISION_MODEL=gpt-5.5
 HD_VISION_REASONING_EFFORT=high
 HD_VISION_REAL_API=0
-HD_BODYGRAPH_SAMPLE_DIR=data/bodygraph_samples/images
-HD_BODYGRAPH_GOLDEN_LABELS=data/bodygraph_samples/golden_labels.example.json
 ```
 
 When run from the repository root, Phase 2 loads .env automatically. Inline environment variables such as `HD_VISION_REAL_API=1` override values from .env.
@@ -217,7 +215,7 @@ For evaluation, first create a manually verified golden-label file for the same 
 data/bodygraph_samples/private/golden_labels.local.json
 ```
 
-Then wrap the saved single-image prediction under the matching `case_id`:
+Then wrap the saved single-image prediction in the canonical predictions file shape with the matching `case_id`:
 
 ```sh
 python - <<'PY'
@@ -230,11 +228,21 @@ dst = Path("data/bodygraph_samples/private/predictions.local.json")
 
 prediction = json.loads(src.read_text(encoding="utf-8"))
 dst.write_text(
-    json.dumps({case_id: prediction}, indent=2, sort_keys=True) + "\n",
+    json.dumps(
+        {
+            "schema_version": "phase2_predictions_v1",
+            "predictions": [{"case_id": case_id, **prediction}],
+        },
+        indent=2,
+        sort_keys=True,
+    )
+    + "\n",
     encoding="utf-8",
 )
 PY
 ```
+
+Golden-label files use `phase2_golden_labels_v2` and contain the exact top-level fields `schema_version`, `documentation`, `recommended_sample_coverage`, and `cases`. Prediction files use `phase2_predictions_v1` and contain only `schema_version` and `predictions`; each prediction has `case_id`, `raw_vision`, `derived_chart_data`, and `validation_result`. The evaluator intentionally rejects older aliases and unwrapped prediction forms.
 
 Run evaluation:
 
