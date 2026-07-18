@@ -3,6 +3,22 @@
 from __future__ import annotations
 
 
+PLANETARY_FIELDS: tuple[str, ...] = (
+    "sun",
+    "earth",
+    "north_node",
+    "south_node",
+    "moon",
+    "mercury",
+    "venus",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
+)
+
 CANONICAL_CENTERS: tuple[str, ...] = (
     "Head",
     "Ajna",
@@ -120,6 +136,7 @@ MOTOR_CENTERS: frozenset[str] = frozenset(
 )
 
 __all__ = [
+    "PLANETARY_FIELDS",
     "CANONICAL_CENTERS",
     "CENTER_ALIASES",
     "ALL_CHANNELS",

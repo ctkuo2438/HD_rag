@@ -1,16 +1,15 @@
-"""Strict offline parser for mocked BodyGraph raw Vision JSON."""
-
 from __future__ import annotations
 
 import json
 import re
 from collections.abc import Collection, Mapping
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn, overload
 
 from human_design.vision.constants import (
     ALL_CHANNELS,
     CANONICAL_CENTERS,
     CENTER_ALIASES,
+    PLANETARY_FIELDS,
 )
 from human_design.vision.models import (
     Activation,
@@ -20,31 +19,15 @@ from human_design.vision.models import (
     RawVisionExtraction,
     UncertainItem,
     ValidationCode,
-    ValidationSeverity,
     ValidationSource,
     ValidationWarning,
+    warning_defaults,
 )
 
 
 class BodyGraphParseError(ValueError):
     """Raised when raw Vision JSON cannot be parsed into the raw schema."""
 
-
-_PLANETARY_FIELDS = (
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-)
 
 _REQUIRED_TOP_LEVEL_FIELDS = frozenset(
     {
@@ -102,7 +85,7 @@ _CENTER_NAME_LOOKUP = {
 
 
 def parse_bodygraph_raw_extraction_json(raw_json: str) -> ParseResult:
-    """Parse mocked raw Vision JSON into typed raw extraction models."""
+    """Parse raw Vision JSON into typed raw extraction models."""
     payload = _parse_json_object(raw_json)
     _validate_top_level_schema(payload)
 
@@ -133,7 +116,7 @@ def parse_bodygraph_raw_extraction_json(raw_json: str) -> ParseResult:
             payload["visible_colored_channels"],
             warnings,
         ),
-        uncertain_items=_parse_uncertain_items(payload["uncertain_items"]),
+        uncertain_items=_parse_uncertain_items(payload["uncertain_items"], warnings),
     )
     return ParseResult(raw_vision=raw_vision, warnings=tuple(warnings))
 
@@ -159,21 +142,42 @@ def _reject_nonstandard_json_constant(value: str) -> NoReturn:
 
 
 def _validate_top_level_schema(payload: Mapping[str, Any]) -> None:
-    for field_name in sorted(_FORBIDDEN_FINAL_CONCEPT_FIELDS & payload.keys()):
+    forbidden = _FORBIDDEN_FINAL_CONCEPT_FIELDS & payload.keys()
+    if forbidden:
         raise BodyGraphParseError(
-            f"final Human Design concepts are not accepted from Vision output: "
-            f"{field_name}"
+            "final Human Design concepts are not accepted from Vision output: "
+            + ", ".join(sorted(forbidden))
         )
 
     missing = _REQUIRED_TOP_LEVEL_FIELDS - payload.keys()
     if missing:
-        missing_field = sorted(missing)[0]
-        raise BodyGraphParseError(f"Missing required top-level field: {missing_field}")
+        raise BodyGraphParseError(
+            f"Missing required top-level fields: {', '.join(sorted(missing))}"
+        )
 
-    extras = set(payload) - _REQUIRED_TOP_LEVEL_FIELDS
+    extras = payload.keys() - _REQUIRED_TOP_LEVEL_FIELDS
     if extras:
-        extra_field = sorted(extras)[0]
-        raise BodyGraphParseError(f"Unexpected top-level raw Vision field: {extra_field}")
+        raise BodyGraphParseError(
+            f"Unexpected top-level raw Vision fields: {', '.join(sorted(extras))}"
+        )
+
+
+@overload
+def _parse_activation_column(
+    raw_column: Any,
+    *,
+    column_name: Literal["personality"],
+    warnings: list[ValidationWarning],
+) -> PersonalityActivationColumn: ...
+
+
+@overload
+def _parse_activation_column(
+    raw_column: Any,
+    *,
+    column_name: Literal["design"],
+    warnings: list[ValidationWarning],
+) -> DesignActivationColumn: ...
 
 
 def _parse_activation_column(
@@ -186,12 +190,12 @@ def _parse_activation_column(
         raise BodyGraphParseError(f"{column_name} must be a JSON object")
     _reject_extra_keys(
         raw_column,
-        allowed_keys=_PLANETARY_FIELDS,
+        allowed_keys=PLANETARY_FIELDS,
         field_path=column_name,
     )
 
     parsed: dict[str, Activation | None] = {}
-    for field_name in _PLANETARY_FIELDS:
+    for field_name in PLANETARY_FIELDS:
         field_path = f"{column_name}.{field_name}"
         if field_name not in raw_column:
             parsed[field_name] = None
@@ -237,12 +241,15 @@ def _parse_activation_value(
 
     gate = int(match.group(1))
     line = int(match.group(2))
-    activation = Activation(gate=gate, line=line)
+
     if not 1 <= gate <= 64:
         warnings.append(_parser_warning(ValidationCode.INVALID_ACTIVATION_GATE, field_path))
+        return None
     if not 1 <= line <= 6:
         warnings.append(_parser_warning(ValidationCode.INVALID_ACTIVATION_LINE, field_path))
-    return activation
+        return None
+
+    return Activation(gate=gate, line=line)
 
 
 def _missing_activation_warning(
@@ -353,60 +360,43 @@ def _parse_centers(
     return tuple(parsed)
 
 
-def _parse_uncertain_items(raw_items: Any) -> tuple[UncertainItem, ...]:
+def _parse_uncertain_items(
+    raw_items: Any,
+    warnings: list[ValidationWarning],
+) -> tuple[UncertainItem, ...]:
     if not isinstance(raw_items, list):
         raise BodyGraphParseError("uncertain_items must be a list")
 
+    # Element-level failures downgrade to warning + skip, matching the other
+    # list parsers: uncertain_items is self-reported metadata, so a bad item
+    # should never fail the whole parse.
     parsed: list[UncertainItem] = []
     for index, raw_item in enumerate(raw_items):
-        if not isinstance(raw_item, dict):
-            raise BodyGraphParseError(f"uncertain_items[{index}] must be an object")
-        missing = _UNCERTAIN_ITEM_FIELDS - raw_item.keys()
-        if missing:
-            raise BodyGraphParseError(
-                f"uncertain_items[{index}] missing required field: "
-                f"{sorted(missing)[0]}"
+        field_path = f"uncertain_items[{index}]"
+        if not isinstance(raw_item, dict) or raw_item.keys() != _UNCERTAIN_ITEM_FIELDS:
+            warnings.append(
+                _parser_warning(ValidationCode.INVALID_UNCERTAIN_ITEM, field_path)
             )
-        _reject_extra_keys(
-            raw_item,
-            allowed_keys=_UNCERTAIN_ITEM_FIELDS,
-            field_path=f"uncertain_items[{index}]",
-        )
+            continue
         try:
-            parsed.append(
-                UncertainItem(
-                    field_path=raw_item["field_path"],
-                    observed_value=raw_item["observed_value"],
-                    reason=raw_item["reason"],
-                    confidence=raw_item["confidence"],
-                )
+            parsed.append(UncertainItem(**raw_item))
+        except (TypeError, ValueError):
+            warnings.append(
+                _parser_warning(ValidationCode.INVALID_UNCERTAIN_ITEM, field_path)
             )
-        except (TypeError, ValueError) as exc:
-            raise BodyGraphParseError(f"Invalid uncertain_items[{index}]: {exc}") from exc
     return tuple(parsed)
 
 
 def _parser_warning(code: ValidationCode, field_path: str) -> ValidationWarning:
-    severity, affects_validity = _warning_defaults(code)
+    severity, affects_validity = warning_defaults(code)
     return ValidationWarning(
         code=code,
         message=f"{code.value} at {field_path}",
         severity=severity,
         affects_validity=affects_validity,
         source=ValidationSource.parser,
+        field_path=field_path,
     )
-
-
-def _warning_defaults(code: ValidationCode) -> tuple[ValidationSeverity, bool]:
-    if code is ValidationCode.VISIBLE_CHANNEL_NORMALIZED:
-        return ValidationSeverity.INFO, False
-    if code in {
-        ValidationCode.INVALID_VISIBLE_CHANNEL,
-        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
-        ValidationCode.INVALID_VISUAL_CENTER,
-    }:
-        return ValidationSeverity.WARNING, False
-    return ValidationSeverity.ERROR, True
 
 
 def _reject_extra_keys(
@@ -418,7 +408,7 @@ def _reject_extra_keys(
     extra_keys = set(value) - set(allowed_keys)
     if extra_keys:
         raise BodyGraphParseError(
-            f"Unexpected field: {field_path}.{sorted(extra_keys)[0]}"
+            f"Unexpected fields at {field_path}: {', '.join(sorted(extra_keys))}"
         )
 
 

@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 from typing import Any
 
 import pytest
 
+from human_design.vision.constants import PLANETARY_FIELDS as PLANET_FIELDS
 from human_design.vision.models import (
     Activation,
     RawVisionExtraction,
@@ -17,26 +17,6 @@ from human_design.vision.parser import (
     parse_bodygraph_raw_extraction_json,
 )
 from human_design.vision.prompt import load_bodygraph_raw_extraction_prompt
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-PROMPT_PATH = REPO_ROOT / "prompts/bodygraph_raw_extraction.txt"
-
-PLANET_FIELDS = (
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-)
 
 
 def _activation_values() -> dict[str, str]:
@@ -79,20 +59,6 @@ def _valid_payload() -> dict[str, Any]:
     }
 
 
-def test_simplified_six_field_raw_schema_parses_without_fixed_confidence() -> None:
-    result = _parse(_valid_payload())
-
-    assert not hasattr(result.raw_vision, "confidence")
-
-
-def test_removed_fixed_confidence_is_rejected_as_a_top_level_extra() -> None:
-    payload = _valid_payload()
-    payload["confidence"] = {}
-
-    with pytest.raises(BodyGraphParseError, match="confidence"):
-        _parse(payload)
-
-
 def _parse(payload: dict[str, Any]):
     return parse_bodygraph_raw_extraction_json(json.dumps(payload))
 
@@ -108,16 +74,33 @@ def _warnings_by_code(
     return tuple(warning for warning in warnings if warning.code is code)
 
 
-def test_prompt_file_and_loader_return_raw_fact_instructions() -> None:
-    assert PROMPT_PATH.exists()
+def test_simplified_six_field_raw_schema_parses_without_fixed_confidence() -> None:
+    result = _parse(_valid_payload())
 
+    assert not hasattr(result.raw_vision, "confidence")
+
+
+def test_removed_fixed_confidence_is_rejected_as_a_top_level_extra() -> None:
+    payload = _valid_payload()
+    payload["confidence"] = {}
+
+    with pytest.raises(BodyGraphParseError, match="confidence"):
+        _parse(payload)
+
+
+def test_prompt_loads_from_package_data_with_raw_fact_instructions() -> None:
+    # The prompt ships as package data and is resolved through
+    # importlib.resources, so there is no repository-relative path to assert;
+    # a successful non-empty load through the loader is the existence check.
     prompt = load_bodygraph_raw_extraction_prompt()
     prompt_lower = prompt.lower()
 
-    assert "extract only raw visible facts" in prompt_lower
+    assert prompt.strip()
+    assert "raw visible facts" in prompt_lower
+    assert "do not infer final or derived human design concepts" in prompt_lower
     assert "strict json only" in prompt_lower
     assert "json null" in prompt_lower
-    assert "each uncertain item confidence" in prompt_lower
+    assert "confidence must be a finite json number" in prompt_lower
     assert "0.0 through 1.0" in prompt_lower
     assert '"confidence": {' not in prompt_lower
 
@@ -151,51 +134,28 @@ def test_parse_valid_strict_json_into_typed_raw_vision_models() -> None:
     assert result.warnings == ()
 
 
+# The exhaustive alias -> canonical table is pinned by
+# tests/test_bodygraph_constants.py; this parametrization keeps one
+# representative case per normalization rule (canonical passthrough,
+# "center"/"centre" suffix stripping, underscore/hyphen separators, and
+# every alias group).
 @pytest.mark.parametrize(
     ("raw_alias", "canonical_center"),
     [
         ("head", "Head"),
-        ("head center", "Head"),
-        ("ajna", "Ajna"),
-        ("ajna center", "Ajna"),
-        ("throat", "Throat"),
         ("throat center", "Throat"),
         ("g", "G"),
-        ("g center", "G"),
         ("g centre", "G"),
         ("g_center", "G"),
         ("self", "G"),
-        ("self center", "G"),
-        ("identity", "G"),
         ("identity center", "G"),
-        ("ego", "Ego"),
-        ("ego center", "Ego"),
         ("heart", "Ego"),
-        ("heart center", "Ego"),
-        ("will", "Ego"),
         ("will center", "Ego"),
-        ("sacral", "Sacral"),
-        ("sacral center", "Sacral"),
-        ("spleen", "Spleen"),
-        ("spleen center", "Spleen"),
-        ("splenic", "Spleen"),
-        ("splenic center", "Spleen"),
-        ("solar plexus", "Solar Plexus"),
-        ("solar plexus center", "Solar Plexus"),
-        ("solar_plexus", "Solar Plexus"),
-        ("solar_plexus_center", "Solar Plexus"),
-        ("emotional", "Solar Plexus"),
-        ("emotional center", "Solar Plexus"),
-        ("heart_center", "Ego"),
         ("ego_center", "Ego"),
-        ("root", "Root"),
-        ("root center", "Root"),
+        ("splenic", "Spleen"),
+        ("emotional center", "Solar Plexus"),
+        ("solar_plexus_center", "Solar Plexus"),
         ("root_center", "Root"),
-        ("throat_center", "Throat"),
-        ("spleen_center", "Spleen"),
-        ("sacral_center", "Sacral"),
-        ("head_center", "Head"),
-        ("ajna_center", "Ajna"),
     ],
 )
 def test_real_vision_center_aliases_normalize_to_canonical_names(
@@ -240,6 +200,8 @@ def test_invalid_visual_centers_are_skipped_with_indexed_nonfatal_warnings() -> 
     )
     assert "visually_defined_centers[1]" in result.warnings[0].message
     assert "visually_defined_centers[2]" in result.warnings[1].message
+    assert result.warnings[0].field_path == "visually_defined_centers[1]"
+    assert result.warnings[1].field_path == "visually_defined_centers[2]"
     assert all(
         warning.severity is ValidationSeverity.WARNING
         and warning.affects_validity is False
@@ -307,6 +269,15 @@ def test_missing_required_top_level_fields_raise_parse_error(
         _parse(payload)
 
 
+def test_missing_top_level_fields_are_reported_together() -> None:
+    payload = _valid_payload()
+    del payload["personality"]
+    del payload["uncertain_items"]
+
+    with pytest.raises(BodyGraphParseError, match="personality.*uncertain_items"):
+        _parse(payload)
+
+
 def test_unexpected_top_level_field_remains_rejected() -> None:
     payload = _valid_payload()
     payload["provider_metadata"] = {}
@@ -331,16 +302,53 @@ def test_activation_columns_reject_extra_keys_with_full_path(
     payload = _valid_payload()
     payload[column_name]["ascendant"] = "12.3"
 
-    with pytest.raises(BodyGraphParseError, match=rf"{column_name}\.ascendant"):
+    with pytest.raises(BodyGraphParseError, match=rf"{column_name}.*ascendant"):
         _parse(payload)
 
 
-def test_uncertain_items_reject_extra_keys_with_indexed_full_path() -> None:
+def test_uncertain_items_with_extra_keys_are_skipped_with_warning() -> None:
     payload = _valid_payload()
     payload["uncertain_items"][0]["type"] = "Generator"
 
-    with pytest.raises(BodyGraphParseError, match=r"uncertain_items\[0\]\.type"):
-        _parse(payload)
+    result = _parse(payload)
+
+    assert result.raw_vision.uncertain_items == ()
+    assert _warning_codes(result.warnings) == (ValidationCode.INVALID_UNCERTAIN_ITEM,)
+    warning = result.warnings[0]
+    assert warning.field_path == "uncertain_items[0]"
+    assert warning.severity is ValidationSeverity.WARNING
+    assert warning.affects_validity is False
+    assert warning.source is ValidationSource.parser
+
+
+def test_uncertain_items_with_missing_fields_are_skipped_with_warning() -> None:
+    payload = _valid_payload()
+    del payload["uncertain_items"][0]["reason"]
+
+    result = _parse(payload)
+
+    assert result.raw_vision.uncertain_items == ()
+    assert _warning_codes(result.warnings) == (ValidationCode.INVALID_UNCERTAIN_ITEM,)
+
+
+def test_bad_uncertain_item_does_not_drop_valid_items() -> None:
+    payload = _valid_payload()
+    payload["uncertain_items"] = [
+        {"unexpected": "shape"},
+        {
+            "field_path": "design.mars",
+            "observed_value": None,
+            "reason": "Activation is not readable.",
+            "confidence": 0.4,
+        },
+    ]
+
+    result = _parse(payload)
+
+    assert len(result.raw_vision.uncertain_items) == 1
+    assert result.raw_vision.uncertain_items[0].field_path == "design.mars"
+    assert _warning_codes(result.warnings) == (ValidationCode.INVALID_UNCERTAIN_ITEM,)
+    assert result.warnings[0].field_path == "uncertain_items[0]"
 
 
 def test_null_activation_value_becomes_none_without_warning() -> None:
@@ -414,24 +422,35 @@ def test_malformed_activation_values_store_none_and_warn(raw_value: str) -> None
     assert warning.affects_validity is True
 
 
-def test_out_of_range_gate_is_stored_and_warns_invalid_gate() -> None:
+def test_out_of_range_gate_is_dropped_and_warns_invalid_gate() -> None:
     payload = _valid_payload()
     payload["personality"]["moon"] = "99.1"
 
     result = _parse(payload)
 
-    assert result.raw_vision.personality.moon == Activation(gate=99, line=1)
+    assert result.raw_vision.personality.moon is None
     assert _warning_codes(result.warnings) == (ValidationCode.INVALID_ACTIVATION_GATE,)
 
 
-def test_out_of_range_line_is_stored_and_warns_invalid_line() -> None:
+def test_out_of_range_line_is_dropped_and_warns_invalid_line() -> None:
     payload = _valid_payload()
     payload["personality"]["moon"] = "60.9"
 
     result = _parse(payload)
 
-    assert result.raw_vision.personality.moon == Activation(gate=60, line=9)
+    assert result.raw_vision.personality.moon is None
     assert _warning_codes(result.warnings) == (ValidationCode.INVALID_ACTIVATION_LINE,)
+
+
+def test_out_of_range_gate_and_line_report_gate_only() -> None:
+    # Range checks stop at the first failure: one bad activation, one warning.
+    payload = _valid_payload()
+    payload["personality"]["moon"] = "99.9"
+
+    result = _parse(payload)
+
+    assert result.raw_vision.personality.moon is None
+    assert _warning_codes(result.warnings) == (ValidationCode.INVALID_ACTIVATION_GATE,)
 
 
 def test_channel_normalization_and_invalid_channel_warnings() -> None:
@@ -541,7 +560,11 @@ def test_uncertain_items_accept_raw_vision_field_paths(field_path: str) -> None:
         "profile",
     ],
 )
-def test_uncertain_items_reject_derived_field_paths(field_path: str) -> None:
+def test_uncertain_items_with_derived_field_paths_are_skipped_with_warning(
+    field_path: str,
+) -> None:
+    # UncertainItem rejects derived field paths at construction; the parser
+    # downgrades that to warning + skip like every other bad list element.
     payload = _valid_payload()
     payload["uncertain_items"] = [
         {
@@ -552,20 +575,11 @@ def test_uncertain_items_reject_derived_field_paths(field_path: str) -> None:
         }
     ]
 
-    with pytest.raises(BodyGraphParseError, match="uncertain_items"):
-        _parse(payload)
-
-
-def test_parser_warnings_merge_into_validation_result() -> None:
-    payload = _valid_payload()
-    payload["visible_colored_channels"] = ["57-10"]
     result = _parse(payload)
 
-    validation = result.to_validation_result()
-
-    assert validation.warnings == result.warnings
-    assert validation.warnings[0].code is ValidationCode.VISIBLE_CHANNEL_NORMALIZED
-    assert validation.warnings[0].source is ValidationSource.parser
+    assert result.raw_vision.uncertain_items == ()
+    assert _warning_codes(result.warnings) == (ValidationCode.INVALID_UNCERTAIN_ITEM,)
+    assert result.warnings[0].field_path == "uncertain_items[0]"
 
 
 @pytest.mark.parametrize(

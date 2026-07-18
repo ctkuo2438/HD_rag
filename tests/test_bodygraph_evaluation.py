@@ -5,47 +5,20 @@ from typing import Any
 
 import pytest
 
-from human_design.vision.constants import CANONICAL_CENTERS
+from human_design.vision.constants import CANONICAL_CENTERS, PLANETARY_FIELDS
 from human_design.vision.interpreter import interpret_bodygraph
-from human_design.vision.models import ValidationSeverity, ValidationSource
+from human_design.vision.models import (
+    ValidationCode,
+    ValidationSeverity,
+    ValidationSource,
+    warning_defaults,
+)
 from human_design.vision.parser import parse_bodygraph_raw_extraction_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_LABELS_PATH = REPO_ROOT / "data/bodygraph_samples/golden_labels.example.json"
 GITIGNORE_PATH = REPO_ROOT / ".gitignore"
-
-PLANETARY_FIELDS = {
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-}
-
-PLANETARY_FIELD_ORDER = (
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-)
 
 BASIC_INFO_FIELDS = (
     "profile",
@@ -175,12 +148,16 @@ def _derived_labels() -> dict[str, Any]:
 
 
 def _warnings_are_valid(
-    warnings: list[dict[str, object]] | None,
+    warnings: list[object] | None,
 ) -> bool:
-    return not any(
-        warning.get("affects_validity") is True
-        for warning in warnings or []
-    )
+    for warning in warnings or []:
+        if isinstance(warning, str):
+            _, affects_validity = warning_defaults(ValidationCode(warning))
+            if affects_validity:
+                return False
+        elif isinstance(warning, dict) and warning.get("affects_validity") is True:
+            return False
+    return True
 
 
 def _golden_case(
@@ -189,7 +166,7 @@ def _golden_case(
     include_derived_metrics: bool = True,
     include_raw_visual_metrics: bool = True,
     expected_is_valid: bool | None = None,
-    warning_entries: list[dict[str, object]] | None = None,
+    warning_entries: list[object] | None = None,
 ) -> dict[str, Any]:
     evaluation_scope: dict[str, object] = {
         "include_raw_visual_metrics": include_raw_visual_metrics,
@@ -267,6 +244,37 @@ def _script_module():
     return module
 
 
+def _write_golden_file(tmp_path: Path, cases: list[dict[str, Any]]) -> Path:
+    golden_path = tmp_path / "golden.json"
+    golden_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "phase2_golden_labels_v2",
+                "documentation": {},
+                "recommended_sample_coverage": {},
+                "cases": cases,
+            }
+        )
+    )
+    return golden_path
+
+
+def _write_predictions_file(
+    tmp_path: Path,
+    predictions: list[dict[str, Any]],
+) -> Path:
+    predictions_path = tmp_path / "predictions.json"
+    predictions_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "phase2_predictions_v1",
+                "predictions": predictions,
+            }
+        )
+    )
+    return predictions_path
+
+
 def test_example_golden_labels_load_as_json() -> None:
     data = _load_golden_labels()
 
@@ -312,8 +320,8 @@ def test_full_derived_evaluation_cases_have_all_planetary_and_derived_labels() -
     for case in full_cases:
         raw_labels = case["expected_raw_labels"]
         assert set(raw_labels) == REQUIRED_RAW_LABEL_KEYS
-        assert set(raw_labels["personality"]) == PLANETARY_FIELDS
-        assert set(raw_labels["design"]) == PLANETARY_FIELDS
+        assert set(raw_labels["personality"]) == set(PLANETARY_FIELDS)
+        assert set(raw_labels["design"]) == set(PLANETARY_FIELDS)
 
         activations = tuple(raw_labels["personality"].values()) + tuple(
             raw_labels["design"].values()
@@ -364,8 +372,8 @@ def test_partial_raw_only_cases_exclude_derived_metrics_and_keep_all_planet_keys
 
         raw_labels = case["expected_raw_labels"]
         assert set(raw_labels) == REQUIRED_RAW_LABEL_KEYS
-        assert set(raw_labels["personality"]) == PLANETARY_FIELDS
-        assert set(raw_labels["design"]) == PLANETARY_FIELDS
+        assert set(raw_labels["personality"]) == set(PLANETARY_FIELDS)
+        assert set(raw_labels["design"]) == set(PLANETARY_FIELDS)
 
         activations = tuple(raw_labels["personality"].values()) + tuple(
             raw_labels["design"].values()
@@ -447,30 +455,25 @@ def test_validation_is_valid_exact_match_metric(
     assert result.metrics["validation_is_valid_exact_match"] == expected_metric
 
 
-def test_warnings_are_valid_uses_only_explicit_true_metadata() -> None:
+def test_fixture_validity_follows_explicit_true_metadata_with_override() -> None:
+    # The fixture helpers mirror ValidationResult semantics: bare string
+    # warning codes use canonical warning_defaults, literal dict
+    # affects_validity=True invalidates, and explicit is_valid always wins
+    # over warning metadata.
     assert _warnings_are_valid(None) is True
+    assert _warnings_are_valid(["VISIBLE_CHANNEL_NOT_DERIVED"]) is True
+    assert _warnings_are_valid(["MISSING_ACTIVATION"]) is False
     assert _warnings_are_valid([{"affects_validity": False}]) is True
     assert _warnings_are_valid([{"affects_validity": True}]) is False
     assert _warnings_are_valid([{"affects_validity": "true"}]) is True
     assert _warnings_are_valid([{"affects_validity": 1}]) is True
 
-
-def test_nonfatal_warning_keeps_golden_and_prediction_fixtures_valid() -> None:
     nonfatal_warning = {
         "code": "VISIBLE_CHANNEL_NOT_DERIVED",
         "severity": ValidationSeverity.WARNING.value,
         "affects_validity": False,
         "source": ValidationSource.validation.value,
     }
-
-    golden = _golden_case(warning_entries=[nonfatal_warning])
-    prediction = _prediction(warnings=[nonfatal_warning])
-
-    assert golden["expected_validation_result"]["is_valid"] is True
-    assert prediction["validation_result"]["is_valid"] is True
-
-
-def test_fatal_warning_makes_golden_and_prediction_fixtures_invalid() -> None:
     fatal_warning = {
         "code": "MISSING_ACTIVATION",
         "severity": ValidationSeverity.ERROR.value,
@@ -478,32 +481,16 @@ def test_fatal_warning_makes_golden_and_prediction_fixtures_invalid() -> None:
         "source": ValidationSource.validation.value,
     }
 
-    golden = _golden_case(warning_entries=[fatal_warning])
-    prediction = _prediction(warnings=[fatal_warning])
-
-    assert golden["expected_validation_result"]["is_valid"] is False
-    assert prediction["validation_result"]["is_valid"] is False
-
-
-def test_explicit_fixture_validity_overrides_warning_metadata() -> None:
-    nonfatal_warning = {
-        "code": "VISIBLE_CHANNEL_NOT_DERIVED",
-        "severity": ValidationSeverity.WARNING.value,
-        "affects_validity": False,
-        "source": ValidationSource.validation.value,
-    }
-
-    golden = _golden_case(
+    nonfatal_golden = _golden_case(warning_entries=[nonfatal_warning])
+    fatal_prediction = _prediction(warnings=[fatal_warning])
+    overridden_golden = _golden_case(
         expected_is_valid=False,
         warning_entries=[nonfatal_warning],
     )
-    prediction = _prediction(
-        is_valid=False,
-        warnings=[nonfatal_warning],
-    )
 
-    assert golden["expected_validation_result"]["is_valid"] is False
-    assert prediction["validation_result"]["is_valid"] is False
+    assert nonfatal_golden["expected_validation_result"]["is_valid"] is True
+    assert fatal_prediction["validation_result"]["is_valid"] is False
+    assert overridden_golden["expected_validation_result"]["is_valid"] is False
 
 
 def test_missing_predicted_validation_is_valid_scores_zero() -> None:
@@ -523,12 +510,22 @@ def test_missing_predicted_validation_is_valid_scores_zero() -> None:
     assert result.metrics["validation_is_valid_exact_match"] == 0.0
 
 
-def test_raw_visual_metrics_can_be_disabled_without_disabling_activations() -> None:
+def test_unlabeled_visual_collections_are_not_scored() -> None:
+    # Scoping is label presence: a golden that does not label the visual
+    # collections simply is not scored on them. There is no separate scope
+    # flag inside evaluation any more.
     evaluation = _metric_module()
+    golden = _golden_case()
+    for field_name in (
+        "visually_active_gates",
+        "visually_defined_centers",
+        "visible_colored_channels",
+    ):
+        del golden["expected_raw_labels"][field_name]
 
     result = evaluation.evaluate_bodygraph_prediction(
         case_id="case_001",
-        golden=_golden_case(include_raw_visual_metrics=False),
+        golden=golden,
         prediction=_prediction(),
     )
 
@@ -541,12 +538,12 @@ def test_raw_visual_metrics_can_be_disabled_without_disabling_activations() -> N
     )
 
 
-def test_raw_visual_metrics_run_when_scope_flag_is_enabled() -> None:
+def test_raw_visual_metrics_run_when_labeled() -> None:
     evaluation = _metric_module()
 
     result = evaluation.evaluate_bodygraph_prediction(
         case_id="case_001",
-        golden=_golden_case(include_raw_visual_metrics=True),
+        golden=_golden_case(),
         prediction=_prediction(),
     )
 
@@ -649,6 +646,60 @@ def test_line_mismatch_and_missing_prediction_activation_count_as_failures() -> 
     assert result.metrics["personality_activation_exact_match_rate"] == 11 / 13
     assert result.metrics["design_activation_exact_match_rate"] == 1.0
     assert result.metrics["activation_exact_match_rate"] == 24 / 26
+
+
+def test_hallucinated_activation_on_expected_null_lowers_null_respect_rate() -> None:
+    # Golden says moon is unreadable (null); the prediction still emits a
+    # value. Exact-match rates cannot see this, activation_null_respect_rate
+    # is the metric that catches over-confident hallucination.
+    evaluation = _metric_module()
+    golden = _golden_case()
+    golden["expected_raw_labels"]["personality"]["moon"] = None
+
+    result = evaluation.evaluate_bodygraph_prediction(
+        case_id="case_001",
+        golden=golden,
+        prediction=_prediction(),
+    )
+
+    assert result.metrics["activation_null_respect_rate"] == 0.0
+    assert result.metrics["personality_activation_exact_match_rate"] == 1.0
+
+
+def test_null_respect_rate_is_full_when_prediction_also_returns_null() -> None:
+    evaluation = _metric_module()
+    golden = _golden_case()
+    golden["expected_raw_labels"]["personality"]["moon"] = None
+    personality = dict(_full_raw_labels()["personality"])
+    personality["moon"] = None
+
+    result = evaluation.evaluate_bodygraph_prediction(
+        case_id="case_001",
+        golden=golden,
+        prediction=_prediction(personality=personality),
+    )
+
+    assert result.metrics["activation_null_respect_rate"] == 1.0
+
+
+def test_set_metrics_normalize_gate_types_and_channel_direction() -> None:
+    # Label formatting must not silently zero a score: "34" == 34 and a
+    # reversed "34-10" matches the canonical "10-34".
+    evaluation = _metric_module()
+    golden = _golden_case()
+    golden["expected_derived_labels"]["active_gates"] = [
+        str(gate) for gate in golden["expected_derived_labels"]["active_gates"]
+    ]
+    golden["expected_derived_labels"]["active_channels"] = ["3-60", "34-10"]
+
+    result = evaluation.evaluate_bodygraph_prediction(
+        case_id="case_001",
+        golden=golden,
+        prediction=_prediction(),
+    )
+
+    assert result.metrics["active_gate_f1"] == 1.0
+    assert result.metrics["active_channel_f1"] == 1.0
 
 
 def test_partial_raw_only_cases_keep_activation_metrics_and_skip_derived_metrics() -> None:
@@ -769,7 +820,22 @@ def test_macro_aggregate_metrics_and_threshold_checks() -> None:
     assert not hasattr(summary.per_case[0], "passed_thresholds")
 
 
-def test_warning_code_metrics_and_metadata_match_rate() -> None:
+def test_missing_prediction_adds_case_warning_and_scores_zero() -> None:
+    evaluation = _metric_module()
+
+    summary = evaluation.evaluate_bodygraph_predictions(
+        golden_cases=[_golden_case("case_001")],
+        predictions={},
+        thresholds={"activation_exact_match_rate": 0.5},
+    )
+
+    case_result = summary.per_case[0]
+    assert "Prediction missing for this case." in case_result.warnings
+    assert case_result.metrics["activation_exact_match_rate"] == 0.0
+    assert summary.passed_thresholds is False
+
+
+def test_warning_code_metrics_ignore_message_and_metadata() -> None:
     evaluation = _metric_module()
     expected_warning = {
         "code": "VISIBLE_CHANNEL_NOT_DERIVED",
@@ -797,16 +863,43 @@ def test_warning_code_metrics_and_metadata_match_rate() -> None:
     assert result.metrics["warning_code_precision"] == 1.0
     assert result.metrics["warning_code_recall"] == 1.0
     assert result.metrics["warning_code_f1"] == 1.0
-    assert result.metrics["warning_metadata_exact_match_rate"] == 1.0
+    # Metadata matching was removed: severity / affects_validity are a
+    # deterministic function of the code (models.warning_defaults), so
+    # matching codes already implies matching metadata.
+    assert "warning_metadata_exact_match_rate" not in result.metrics
 
 
-@pytest.mark.parametrize(
-    "malformed_warnings",
-    ["MISSING_ACTIVATION", ["MISSING_ACTIVATION"]],
-)
-def test_malformed_warning_values_do_not_match_expected_warning_codes(
-    malformed_warnings: object,
-) -> None:
+def test_bare_string_warning_labels_match_full_warning_objects() -> None:
+    # Golden labels may record warnings as bare code strings; a prediction
+    # carrying the full warning object for the same code is a perfect match.
+    evaluation = _metric_module()
+    predicted_warning = {
+        "code": "MISSING_ACTIVATION",
+        "severity": ValidationSeverity.ERROR.value,
+        "affects_validity": True,
+        "source": ValidationSource.validation.value,
+        "message": "Required activation is missing.",
+        "field_path": "personality.moon",
+    }
+
+    result = evaluation.evaluate_bodygraph_prediction(
+        case_id="case_001",
+        golden=_golden_case(
+            expected_is_valid=False,
+            warning_entries=["MISSING_ACTIVATION"],
+        ),
+        prediction=_prediction(is_valid=False, warnings=[predicted_warning]),
+    )
+
+    assert result.metrics["warning_code_precision"] == 1.0
+    assert result.metrics["warning_code_recall"] == 1.0
+    assert result.metrics["warning_code_f1"] == 1.0
+    assert result.metrics["validation_is_valid_exact_match"] == 1.0
+
+
+def test_non_list_prediction_warnings_score_as_empty() -> None:
+    # A warnings value that is not a list/tuple cannot carry warning entries;
+    # it is treated as an empty prediction, so every expected code is missed.
     evaluation = _metric_module()
     expected_warning = {
         "code": "MISSING_ACTIVATION",
@@ -818,7 +911,7 @@ def test_malformed_warning_values_do_not_match_expected_warning_codes(
     prediction = _prediction()
     validation_result = prediction["validation_result"]
     assert isinstance(validation_result, dict)
-    validation_result["warnings"] = malformed_warnings
+    validation_result["warnings"] = "MISSING_ACTIVATION"
 
     result = evaluation.evaluate_bodygraph_prediction(
         case_id="case_001",
@@ -831,23 +924,52 @@ def test_malformed_warning_values_do_not_match_expected_warning_codes(
     assert result.metrics["warning_code_f1"] == 0.0
 
 
+@pytest.mark.parametrize(
+    "bad_entry",
+    [
+        "MISSING_ACTIVATON",  # typo of a known code
+        "STALE_REMOVED_CODE",
+        42,
+        {"message": "warning without a code"},
+    ],
+)
+def test_unknown_or_malformed_warning_entries_fail_loudly(
+    bad_entry: object,
+) -> None:
+    # Warning codes are a closed contract: anything that is not a known code
+    # string or a mapping with a known "code" must raise instead of silently
+    # scoring zero (or, worse, silently passing when both sides are garbage).
+    evaluation = _metric_module()
+    expected_warning = {
+        "code": "MISSING_ACTIVATION",
+        "severity": ValidationSeverity.ERROR.value,
+        "affects_validity": True,
+        "source": ValidationSource.parser.value,
+        "message": "Required activation is missing.",
+    }
+    prediction = _prediction()
+    validation_result = prediction["validation_result"]
+    assert isinstance(validation_result, dict)
+    validation_result["warnings"] = [bad_entry]
+
+    with pytest.raises(ValueError, match="warning"):
+        evaluation.evaluate_bodygraph_prediction(
+            case_id="case_001",
+            golden=_golden_case(warning_entries=[expected_warning]),
+            prediction=prediction,
+        )
+
+
 def test_script_main_reads_json_files_and_returns_nonzero_on_threshold_failure(
     tmp_path,
     capsys,
 ) -> None:
     script = _script_module()
-    golden_path = tmp_path / "golden.json"
-    predictions_path = tmp_path / "predictions.json"
-    golden_path.write_text(json.dumps({
-        "schema_version": "phase2_golden_labels_v2",
-        "documentation": {},
-        "recommended_sample_coverage": {},
-        "cases": [_golden_case("case_001")],
-    }))
-    predictions_path.write_text(json.dumps({
-        "schema_version": "phase2_predictions_v1",
-        "predictions": [{"case_id": "case_001", **_prediction()}],
-    }))
+    golden_path = _write_golden_file(tmp_path, [_golden_case("case_001")])
+    predictions_path = _write_predictions_file(
+        tmp_path,
+        [{"case_id": "case_001", **_prediction()}],
+    )
 
     passing_status = script.main(
         [
@@ -884,18 +1006,11 @@ def test_script_json_keeps_threshold_state_only_at_summary_level(
     capsys,
 ) -> None:
     script = _script_module()
-    golden_path = tmp_path / "golden.json"
-    predictions_path = tmp_path / "predictions.json"
-    golden_path.write_text(json.dumps({
-        "schema_version": "phase2_golden_labels_v2",
-        "documentation": {},
-        "recommended_sample_coverage": {},
-        "cases": [_golden_case("case_001")],
-    }))
-    predictions_path.write_text(json.dumps({
-        "schema_version": "phase2_predictions_v1",
-        "predictions": [{"case_id": "case_001", **_prediction()}],
-    }))
+    golden_path = _write_golden_file(tmp_path, [_golden_case("case_001")])
+    predictions_path = _write_predictions_file(
+        tmp_path,
+        [{"case_id": "case_001", **_prediction()}],
+    )
 
     status = script.main(
         [
@@ -915,27 +1030,10 @@ def test_script_json_keeps_threshold_state_only_at_summary_level(
 
 def test_script_loaders_accept_only_canonical_versioned_file_shapes(tmp_path) -> None:
     script = _script_module()
-    golden_path = tmp_path / "golden.json"
-    predictions_path = tmp_path / "predictions.json"
-    golden_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "phase2_golden_labels_v2",
-                "documentation": {},
-                "recommended_sample_coverage": {},
-                "cases": [_golden_case("case_001")],
-            }
-        )
-    )
-    predictions_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "phase2_predictions_v1",
-                "predictions": [
-                    {"case_id": "case_001", **_prediction()}
-                ],
-            }
-        )
+    golden_path = _write_golden_file(tmp_path, [_golden_case("case_001")])
+    predictions_path = _write_predictions_file(
+        tmp_path,
+        [{"case_id": "case_001", **_prediction()}],
     )
 
     assert script._load_golden_cases(golden_path)[0]["case_id"] == "case_001"
@@ -965,16 +1063,8 @@ def test_prediction_loader_rejects_legacy_unwrapped_shapes(
 
 def test_prediction_loader_rejects_duplicate_case_ids(tmp_path) -> None:
     script = _script_module()
-    path = tmp_path / "predictions.json"
     prediction = {"case_id": "case_001", **_prediction()}
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "phase2_predictions_v1",
-                "predictions": [prediction, prediction],
-            }
-        )
-    )
+    path = _write_predictions_file(tmp_path, [prediction, prediction])
 
     with pytest.raises(ValueError, match="duplicate prediction case_id"):
         script._load_predictions(path)
@@ -982,19 +1072,9 @@ def test_prediction_loader_rejects_duplicate_case_ids(tmp_path) -> None:
 
 def test_golden_loader_rejects_non_boolean_scope_flags(tmp_path) -> None:
     script = _script_module()
-    path = tmp_path / "golden.json"
     golden_case = _golden_case()
     golden_case["evaluation_scope"]["include_derived_metrics"] = 1
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "phase2_golden_labels_v2",
-                "documentation": {},
-                "recommended_sample_coverage": {},
-                "cases": [golden_case],
-            }
-        )
-    )
+    path = _write_golden_file(tmp_path, [golden_case])
 
     with pytest.raises(ValueError, match="include_derived_metrics must be a bool"):
         script._load_golden_cases(path)
@@ -1013,21 +1093,11 @@ def test_golden_loader_requires_scope_and_derived_labels_to_agree(
     expected_derived_labels: object,
 ) -> None:
     script = _script_module()
-    path = tmp_path / "golden.json"
     golden_case = _golden_case(
         include_derived_metrics=include_derived_metrics,
     )
     golden_case["expected_derived_labels"] = expected_derived_labels
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "phase2_golden_labels_v2",
-                "documentation": {},
-                "recommended_sample_coverage": {},
-                "cases": [golden_case],
-            }
-        )
-    )
+    path = _write_golden_file(tmp_path, [golden_case])
 
     with pytest.raises(
         ValueError,
@@ -1037,20 +1107,126 @@ def test_golden_loader_requires_scope_and_derived_labels_to_agree(
         script._load_golden_cases(path)
 
 
-def test_golden_loader_rejects_duplicate_case_ids(tmp_path) -> None:
+def test_golden_loader_accepts_warning_entries_with_field_path(tmp_path) -> None:
+    # Golden warnings are naturally copied from pipeline --json output,
+    # whose warnings carry field_path; the loader must accept them.
     script = _script_module()
-    path = tmp_path / "golden.json"
-    golden_case = _golden_case("case_001")
-    path.write_text(
+    warning = {
+        "code": "MISSING_ACTIVATION",
+        "message": "MISSING_ACTIVATION at personality.moon",
+        "severity": ValidationSeverity.ERROR.value,
+        "affects_validity": True,
+        "source": ValidationSource.validation.value,
+        "field_path": "personality.moon",
+    }
+    golden_case = _golden_case(
+        expected_is_valid=False,
+        warning_entries=[warning],
+    )
+    path = _write_golden_file(tmp_path, [golden_case])
+
+    assert script._load_golden_cases(path)[0]["case_id"] == "case_001"
+
+
+def test_golden_loader_accepts_bare_string_warning_codes(tmp_path) -> None:
+    # Hand-written golden labels may record just the expected code strings.
+    script = _script_module()
+    golden_case = _golden_case(
+        expected_is_valid=False,
+        warning_entries=["MISSING_ACTIVATION", "VISIBLE_CHANNEL_NOT_DERIVED"],
+    )
+    path = _write_golden_file(tmp_path, [golden_case])
+
+    assert script._load_golden_cases(path)[0]["case_id"] == "case_001"
+
+
+def test_golden_loader_rejects_unknown_bare_string_warning_code(tmp_path) -> None:
+    script = _script_module()
+    golden_case = _golden_case(
+        expected_is_valid=False,
+        warning_entries=["MISSING_ACTIVATON"],
+    )
+    path = _write_golden_file(tmp_path, [golden_case])
+
+    with pytest.raises(ValueError, match="warning code"):
+        script._load_golden_cases(path)
+
+
+def test_script_exits_with_input_error_code_on_unknown_warning_codes(
+    tmp_path,
+    capsys,
+) -> None:
+    # Unknown codes are input errors (exit 2), whether they appear in the
+    # golden file (caught at load) or the predictions (caught at evaluate).
+    script = _script_module()
+    good_golden_path = _write_golden_file(
+        tmp_path,
+        [
+            _golden_case(
+                "case_001",
+                expected_is_valid=False,
+                warning_entries=["MISSING_ACTIVATION"],
+            )
+        ],
+    )
+    bad_golden_path = tmp_path / "bad_golden.json"
+    bad_golden_case = _golden_case(
+        "case_001",
+        expected_is_valid=False,
+        warning_entries=["MISSING_ACTIVATON"],
+    )
+    bad_golden_path.write_text(
         json.dumps(
             {
                 "schema_version": "phase2_golden_labels_v2",
                 "documentation": {},
                 "recommended_sample_coverage": {},
-                "cases": [golden_case, golden_case],
+                "cases": [bad_golden_case],
             }
         )
     )
+    stale_prediction = _prediction(is_valid=False)
+    stale_prediction["validation_result"]["warnings"] = [
+        {
+            "code": "STALE_REMOVED_CODE",
+            "severity": ValidationSeverity.WARNING.value,
+            "affects_validity": False,
+            "source": ValidationSource.validation.value,
+            "message": "This code no longer exists.",
+        }
+    ]
+    predictions_path = _write_predictions_file(
+        tmp_path,
+        [{"case_id": "case_001", **stale_prediction}],
+    )
+
+    bad_golden_status = script.main(
+        [
+            "--golden",
+            str(bad_golden_path),
+            "--predictions",
+            str(predictions_path),
+        ]
+    )
+    bad_prediction_status = script.main(
+        [
+            "--golden",
+            str(good_golden_path),
+            "--predictions",
+            str(predictions_path),
+        ]
+    )
+    stderr_output = capsys.readouterr().err
+
+    assert bad_golden_status == 2
+    assert bad_prediction_status == 2
+    assert "warning code" in stderr_output
+
+
+def test_golden_loader_rejects_duplicate_case_ids(tmp_path) -> None:
+    script = _script_module()
+    golden_case = _golden_case("case_001")
+    path = _write_golden_file(tmp_path, [golden_case, golden_case])
 
     with pytest.raises(ValueError, match="duplicate golden case_id"):
         script._load_golden_cases(path)

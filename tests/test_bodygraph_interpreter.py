@@ -143,12 +143,10 @@ def test_active_gates_derive_from_all_activation_fields_only() -> None:
             "earth": None,
             "north_node": _activation(3, 2),
             "south_node": _activation(3, 3),
-            "moon": _activation(99, 1),
         },
         design_values={
             "sun": _activation(10, 4),
             "earth": _activation(57, 5),
-            "north_node": _activation(0, 1),
             "moon": None,
         },
         visually_active_gates=(20, 34),
@@ -159,8 +157,6 @@ def test_active_gates_derive_from_all_activation_fields_only() -> None:
     assert active_gates == (3, 10, 57, 60)
     assert 20 not in active_gates
     assert 34 not in active_gates
-    assert 99 not in active_gates
-    assert 0 not in active_gates
 
 
 @pytest.mark.parametrize(
@@ -403,14 +399,27 @@ def test_projector_splenic_authority_precedes_projected_authorities() -> None:
     assert result.warnings == ()
 
 
-def test_multi_hop_motor_to_throat_path_does_not_qualify_as_direct() -> None:
+def test_sacral_reaching_throat_through_g_is_manifesting_generator() -> None:
+    # Regression: motor-to-Throat uses graph connectivity, not single-channel
+    # adjacency. Sacral -> G (2-14) -> Throat (1-8) manifests through G.
     result = _interpret_gates((2, 14, 1, 8))
     chart = result.derived_chart_data
 
     assert chart.active_channels == ("1-8", "2-14")
     assert chart.defined_centers == ("Throat", "G", "Sacral")
-    assert chart.basic_info.type == "Generator"
-    assert chart.basic_info.type != "Manifesting Generator"
+    assert chart.basic_info.type == "Manifesting Generator"
+    assert chart.basic_info.authority == "Sacral"
+
+
+def test_ego_reaching_throat_through_g_is_manifestor_with_ego_authority() -> None:
+    # Regression: Ego -> G (25-51) -> Throat (13-33), no Sacral defined.
+    result = _interpret_gates((25, 51, 13, 33))
+    chart = result.derived_chart_data
+
+    assert chart.active_channels == ("13-33", "25-51")
+    assert chart.defined_centers == ("Throat", "G", "Ego")
+    assert chart.basic_info.type == "Manifestor"
+    assert chart.basic_info.authority == "Ego"
 
 
 def test_definition_uses_connected_components_with_coarse_split_taxonomy() -> None:

@@ -4,7 +4,13 @@
     "purpose": "Sanitized offline Phase 2 extraction evaluation examples."
   },
   "recommended_sample_coverage": {
-    "chart_types": ["Generator", "Manifesting Generator", "Projector", "Manifestor", "Reflector"],
+    "chart_types": [
+      "Generator",
+      "Manifesting Generator",
+      "Projector",
+      "Manifestor",
+      "Reflector"
+    ],
     "notes": "Add extra Reflector examples and diverse authorities before production evaluation."
   },
   "cases": [
@@ -19,18 +25,54 @@
       },
       "expected_raw_labels": {
         "personality": {
-          "sun": "61.4", "earth": "62.4", "north_node": "3.1", "south_node": "60.2",
-          "moon": "10.3", "mercury": "34.2", "venus": "1.1", "mars": "1.2",
-          "jupiter": "1.3", "saturn": "1.4", "uranus": "1.5", "neptune": "1.6", "pluto": "1.1"
+          "sun": "61.4",
+          "earth": "62.4",
+          "north_node": "3.1",
+          "south_node": "60.2",
+          "moon": "10.3",
+          "mercury": "34.2",
+          "venus": "1.1",
+          "mars": "1.2",
+          "jupiter": "1.3",
+          "saturn": "1.4",
+          "uranus": "1.5",
+          "neptune": "1.6",
+          "pluto": "1.1"
         },
         "design": {
-          "sun": "32.6", "earth": "1.2", "north_node": "1.3", "south_node": "1.4",
-          "moon": "1.5", "mercury": "1.6", "venus": "1.1", "mars": "1.2",
-          "jupiter": "1.3", "saturn": "1.4", "uranus": "1.5", "neptune": "1.6", "pluto": "1.1"
+          "sun": "32.6",
+          "earth": "1.2",
+          "north_node": "1.3",
+          "south_node": "1.4",
+          "moon": "1.5",
+          "mercury": "1.6",
+          "venus": "1.1",
+          "mars": "1.2",
+          "jupiter": "1.3",
+          "saturn": "1.4",
+          "uranus": "1.5",
+          "neptune": "1.6",
+          "pluto": "1.1"
         },
-        "visually_defined_centers": ["G", "Sacral", "Root"],
-        "visually_active_gates": [1, 3, 10, 32, 34, 60, 61, 62],
-        "visible_colored_channels": ["3-60", "10-34"],
+        "visually_defined_centers": [
+          "G",
+          "Sacral",
+          "Root"
+        ],
+        "visually_active_gates": [
+          1,
+          3,
+          10,
+          32,
+          34,
+          60,
+          61,
+          62
+        ],
+        "visible_colored_channels": [
+          "3-60",
+          "10-34"
+        ],
         "uncertain_items": []
       },
       "expected_derived_labels": {
@@ -43,9 +85,25 @@
           "not_self_theme": "Frustration",
           "signature": "Satisfaction"
         },
-        "active_gates": [1, 3, 10, 32, 34, 60, 61, 62],
-        "active_channels": ["3-60", "10-34"],
-        "defined_centers": ["G", "Sacral", "Root"]
+        "active_gates": [
+          1,
+          3,
+          10,
+          32,
+          34,
+          60,
+          61,
+          62
+        ],
+        "active_channels": [
+          "3-60",
+          "10-34"
+        ],
+        "defined_centers": [
+          "G",
+          "Sacral",
+          "Root"
+        ]
       },
       "expected_validation_result": {
         "is_valid": true,
@@ -63,14 +121,34 @@
       },
       "expected_raw_labels": {
         "personality": {
-          "sun": "61.4", "earth": null, "north_node": null, "south_node": null,
-          "moon": null, "mercury": null, "venus": null, "mars": null,
-          "jupiter": null, "saturn": null, "uranus": null, "neptune": null, "pluto": null
+          "sun": "61.4",
+          "earth": null,
+          "north_node": null,
+          "south_node": null,
+          "moon": null,
+          "mercury": null,
+          "venus": null,
+          "mars": null,
+          "jupiter": null,
+          "saturn": null,
+          "uranus": null,
+          "neptune": null,
+          "pluto": null
         },
         "design": {
-          "sun": "32.6", "earth": null, "north_node": null, "south_node": null,
-          "moon": null, "mercury": null, "venus": null, "mars": null,
-          "jupiter": null, "saturn": null, "uranus": null, "neptune": null, "pluto": null
+          "sun": "32.6",
+          "earth": null,
+          "north_node": null,
+          "south_node": null,
+          "moon": null,
+          "mercury": null,
+          "venus": null,
+          "mars": null,
+          "jupiter": null,
+          "saturn": null,
+          "uranus": null,
+          "neptune": null,
+          "pluto": null
         },
         "visually_defined_centers": [],
         "visually_active_gates": [],
@@ -88,13 +166,7 @@
       "expected_validation_result": {
         "is_valid": false,
         "warnings": [
-          {
-            "code": "MISSING_ACTIVATION",
-            "message": "One or more required activations are missing.",
-            "severity": "ERROR",
-            "affects_validity": true,
-            "source": "parser"
-          }
+          "MISSING_ACTIVATION"
         ]
       }
     }

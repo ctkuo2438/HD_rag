@@ -117,8 +117,6 @@ Do not add web frameworks, AWS packages, Streamlit, FastAPI, database dependenci
 │       ├── images/                 # ignored by git by default
 │       ├── private/                # ignored by git
 │       └── golden_labels.example.json
-├── prompts/
-│   └── bodygraph_raw_extraction.txt
 ├── scripts/
 │   ├── extract_bodygraph.py
 │   └── evaluate_bodygraph_extraction.py
@@ -129,6 +127,8 @@ Do not add web frameworks, AWS packages, Streamlit, FastAPI, database dependenci
 │           ├── config.py
 │           ├── models.py
 │           ├── constants.py
+│           ├── prompts/
+│           │   └── bodygraph_raw_extraction.txt
 │           ├── prompt.py
 │           ├── client.py
 │           ├── parser.py
@@ -152,6 +152,8 @@ Do not add web frameworks, AWS packages, Streamlit, FastAPI, database dependenci
 ├── docs/
 │   └── phase2_implementation_plan.md
 ```
+
+The Vision extraction prompt ships as package data under `src/human_design/vision/prompts/` and is loaded with `importlib.resources`, so prompt loading works regardless of install layout (editable install, wheel, zip import).
 
 `vision/pipeline.py` provides the official typed orchestration boundary:
 
@@ -236,7 +238,7 @@ Conceptual schema:
     "active_channels": [],
     "defined_centers": []
   },
-  "validation": {
+  "validation_result": {
     "is_valid": true,
     "warnings": [
       {
@@ -244,12 +246,15 @@ Conceptual schema:
         "message": "Visible channel was not derived from planetary activations.",
         "severity": "WARNING",
         "affects_validity": false,
-        "source": "validation"
+        "source": "validation",
+        "field_path": "visible_colored_channels[0]"
       }
     ]
   }
 }
 ```
+
+The top-level validation key in serialized output is `validation_result`, matching the model field `BodyGraphExtractionResult.validation_result`, the CLI `--json` output, and the `phase2_predictions_v1` prediction shape.
 
 A normal activation value is a `Gate.Line` string such as `"61.4"`. JSON `null` is the canonical representation when a required activation cannot be read. Empty strings are not the canonical representation for unavailable activations and are normalized as unavailable values during parsing.
 
@@ -317,7 +322,7 @@ Missing activation issue rules:
 - missing any other required Personality or Design planetary field produces `MISSING_ACTIVATION`.
 - malformed non-empty values such as `"unknown"` or `"61.x"` produce `MALFORMED_ACTIVATION`, not `MISSING_ACTIVATION`.
 - out-of-range gates and lines produce `INVALID_ACTIVATION_GATE` or `INVALID_ACTIVATION_LINE`.
-- missing or invalid required activation data makes `validation.is_valid` false because deterministic active gates, channels, centers, and final chart interpretation could otherwise be incomplete.
+- missing or invalid required activation data makes `validation_result.is_valid` false because deterministic active gates, channels, centers, and final chart interpretation could otherwise be incomplete.
 - unavailable activation values must not be silently treated as empty gates, false values, or absent active gates.
 - `uncertain_items` are metadata only and must not bypass missing-activation validation.
 
@@ -340,7 +345,7 @@ Do not use percentages, strings such as `"high"` or `"low"`, or free-form confid
 - Empty `uncertain_items` is valid.
 - Per-item uncertainty confidence is raw extraction metadata, not a direct input to deterministic interpretation.
 - Phase 2 evaluation does not need to score confidence calibration yet.
-- The parser must reject uncertainty-item confidence values outside the allowed range.
+- The parser must reject an uncertainty item whose confidence is outside the allowed range by downgrading it to an `INVALID_UNCERTAIN_ITEM` warning and skipping that item; a bad uncertainty item must never fail the whole parse, because `uncertain_items` is self-reported metadata.
 - Do not add a confidence threshold that changes chart derivation behavior in Phase 2.
 
 ### Validation Issue Shape
@@ -352,11 +357,12 @@ Every structured validation warning or issue must include at least:
 - `severity`: one of `INFO`, `WARNING`, or `ERROR`
 - `affects_validity`: boolean
 - `source`: one of `parser`, `interpreter`, or `validation`
+- `field_path`: the raw or derived field path the warning refers to
 
-`validation.is_valid` is derived from warning validity effects:
+`validation_result.is_valid` is derived from warning validity effects:
 
 ```text
-validation.is_valid == not any(issue.affects_validity for issue in validation.warnings)
+validation_result.is_valid == not any(issue.affects_validity for issue in validation_result.warnings)
 ```
 
 `is_valid` measures whether the structured chart result is sufficiently valid for deterministic derivation. It is not a score of Vision quality and does not become false solely because visual evidence differs from derived chart data.
@@ -731,7 +737,7 @@ Motor centers:
 - Solar Plexus
 - Ego
 
-For Phase 2 v1, a motor-to-Throat connection exists only when at least one directly active canonical channel has `Throat` as one endpoint and one motor center (`Root`, `Sacral`, `Solar Plexus`, or `Ego`) as the other endpoint. Graph connectivity may still be used for Definition, but a multi-hop path through intermediate centers must not by itself qualify as a motor-to-Throat connection for Type classification. A Sacral-defined chart is a Manifesting Generator only when it has this direct active motor-to-Throat channel; without one, it is a Generator. A Sacral-undefined chart with such a direct channel is a Manifestor, subject to the remaining Type rules above.
+A motor-to-Throat connection exists when at least one motor center (`Root`, `Sacral`, `Solar Plexus`, or `Ego`) reaches the Throat through the graph of derived defined centers and active channels — either through a directly active canonical motor-to-Throat channel, or through a continuous path of active channels across intermediate defined centers. This is the standard Human Design rule and uses the same graph connectivity as Definition. For example, `2-14` (Sacral–G) plus `1-8` (G–Throat) connects the Sacral motor to the Throat through the defined G Center and therefore qualifies. A Sacral-defined chart with a motor-to-Throat connection is a Manifesting Generator; without one, it is a Generator. A Sacral-undefined chart with a motor-to-Throat connection is a Manifestor, subject to the remaining Type rules above.
 
 ### Authority
 
@@ -773,12 +779,14 @@ and add a validation warning explaining why.
 Derive from type:
 
 ```text
-Generator -> Responding, Frustration, Satisfaction
-Manifesting Generator -> Responding, Frustration, Satisfaction
-Manifestor -> Informing, Anger, Peace
-Projector -> Waiting for Invitation, Bitterness, Success
-Reflector -> Waiting a Lunar Cycle, Disappointment, Surprise
+Generator -> To Respond, Frustration, Satisfaction
+Manifesting Generator -> To Respond, Frustration, Satisfaction
+Manifestor -> To Inform, Anger, Peace
+Projector -> Wait for the Invitation, Bitterness, Success
+Reflector -> Wait a Lunar Cycle, Disappointment, Surprise
 ```
+
+These exact strings are normative: golden labels and evaluation exact-match metrics compare them verbatim, so alternative phrasings such as `Responding` or `Waiting for Invitation` must not be used.
 
 If type is unknown or needs review, these fields should also be conservative or blank with warnings.
 
@@ -815,6 +823,7 @@ Default warning contract:
 | `INVALID_VISIBLE_CHANNEL` | `WARNING` | false | Vision reported an impossible or non-canonical visible channel. |
 | `INVALID_VISUALLY_ACTIVE_GATE` | `WARNING` | false | Vision reported an invalid item in the supporting visually active Gate list. |
 | `INVALID_VISUAL_CENTER` | `WARNING` | false | Vision reported an unknown or malformed visually defined Center. |
+| `INVALID_UNCERTAIN_ITEM` | `WARNING` | false | A self-reported uncertain item was malformed or failed local validation and was skipped. |
 | `VISIBLE_CHANNEL_NOT_DERIVED` | `WARNING` | false | Vision reported a visible channel that was not derived from column activations. |
 | `DERIVED_CHANNEL_NOT_VISIBLE` | `WARNING` | false | A column-derived channel was not detected visually. |
 | `VISUALLY_ACTIVE_GATES_MISMATCH` | `WARNING` | false | Visual gate evidence differs from column-derived active gates. |
@@ -832,7 +841,7 @@ Not every warning makes the full extraction invalid. Parser errors should be use
 
 Rules:
 
-- `validation.is_valid == not any(issue.affects_validity for issue in validation.warnings)`.
+- `validation_result.is_valid == not any(issue.affects_validity for issue in validation_result.warnings)`.
 - Invalid JSON and missing required top-level structure remain hard parser errors.
 - Recoverable extraction-quality issues remain structured issues that reach validation.
 - An invalid visual channel alone must not invalidate an otherwise derivable chart.
@@ -995,6 +1004,7 @@ Golden-label rules:
 - A partial case must explicitly declare an evaluation scope that excludes it from derived-chart metrics.
 - Do not silently treat missing golden activations as empty values, false values, or evaluation mismatches.
 - `uncertain_items` retain their own bounded numeric confidence when an observation is ambiguous.
+- `expected_validation_result.warnings` entries may be written either as bare warning-code strings such as `"MISSING_ACTIVATION"` or as full warning objects; severity and `affects_validity` are a deterministic function of the code, so codes alone are sufficient. Unknown warning codes fail loudly at load time instead of silently scoring zero.
 - Prediction files use `phase2_predictions_v1` with an exact top-level `schema_version` and `predictions` list. Each prediction contains only `case_id`, `raw_vision`, `derived_chart_data`, and `validation_result`.
 
 The sample set should recommend coverage for:
@@ -1154,9 +1164,11 @@ Acceptance criteria:
   - `severity`
   - `affects_validity`
   - `source`
+  - `field_path`
 - Validation severity supports exactly `INFO`, `WARNING`, and `ERROR`.
 - Validation source supports exactly `parser`, `interpreter`, and `validation`.
-- `validation.is_valid` is derived from `not any(issue.affects_validity for issue in warnings)`.
+- `validation_result.is_valid` is derived from `not any(issue.affects_validity for issue in warnings)`.
+- The full BodyGraph extraction result exposes the validation output under the field name `validation_result`, matching the serialized `--json` output and the `phase2_predictions_v1` prediction shape.
 - A typed parser result can preserve parser normalization warnings and merge them into final validation output, for example `ParseResult(raw_vision=RawVisionExtraction, warnings=tuple[ValidationWarning, ...])`.
 - Validation warnings have machine-readable codes.
 - Validation warnings include the generic `MISSING_ACTIVATION` code for unavailable non-Sun required activation values.
@@ -1341,7 +1353,7 @@ Goal:
 Create the prompt and parser that ask the Vision model to extract only raw visible facts, not final Human Design interpretations.
 
 Files touched:
-- `prompts/bodygraph_raw_extraction.txt`
+- `src/human_design/vision/prompts/bodygraph_raw_extraction.txt`
 - `src/human_design/vision/prompt.py`
 - `src/human_design/vision/parser.py`
 - `tests/test_bodygraph_parser.py`
@@ -1352,6 +1364,7 @@ Dependencies:
 - `pytest`
 
 Acceptance criteria:
+- The prompt ships as package data under `src/human_design/vision/prompts/` and `prompt.py` loads it with `importlib.resources`, so loading does not depend on repository-relative path math.
 - Prompt explicitly tells the model:
   - extract only raw visible facts
   - do not infer type
@@ -1394,7 +1407,7 @@ Acceptance criteria:
 - Parser validates activation line range 1-6.
 - Parser preserves invalid activation issues so validation can emit `INVALID_ACTIVATION_GATE` or `INVALID_ACTIVATION_LINE`.
 - Parser preserves `uncertain_items` with `field_path`, `observed_value`, `reason`, and numeric `confidence`.
-- Parser validates each uncertainty-item confidence as a finite number in the inclusive range `0.0` to `1.0`.
+- Parser validates each uncertainty-item confidence as a finite number in the inclusive range `0.0` to `1.0`; an out-of-range or otherwise invalid uncertain item downgrades to an `INVALID_UNCERTAIN_ITEM` warning and is skipped without failing the parse.
 - Parser rejects or clearly flags `uncertain_items.field_path` values that point to derived chart fields.
 - Parser does not derive `basic_info`.
 - Parser does not derive active channels.
@@ -1428,6 +1441,7 @@ Testing requirements:
 - Tests should cover `uncertain_items` with raw Vision field paths.
 - Tests should verify parser warnings can be merged into final validation output.
 - Tests should confirm final Human Design concepts are not accepted as Vision-derived facts.
+- Tests should verify the prompt loads through the package-data loader rather than a hard-coded repository-relative path.
 - Tests should not require private images or API keys.
 
 Verification:
@@ -1467,10 +1481,9 @@ Acceptance criteria:
 - Profile is derived from Personality Sun line and Design Sun line.
 - Definition is derived using the Phase 2 v1 coarse connected-component taxonomy over `derived_chart_data.defined_centers` and active channels.
 - Exactly two disconnected derived components produce `Split Definition`; Phase 2 v1 does not distinguish `Simple-Split Definition` from `Wide-Split Definition` and does not implement bridge-gate analysis.
-- Type mapping logic requires a directly active canonical motor-to-Throat channel for Manifesting Generator or Manifestor classification.
-- Multi-hop graph connectivity through intermediate centers does not by itself qualify as a motor-to-Throat connection for Type classification.
-- A Sacral-defined chart with a direct active motor-to-Throat channel is a Manifesting Generator; without one, it is a Generator.
-- A Sacral-undefined chart with a direct active motor-to-Throat channel is a Manifestor, subject to the remaining Type rules.
+- Type classification uses graph reachability over defined centers and active channels: a motor-to-Throat connection exists when any motor center reaches the Throat either through a directly active canonical motor-to-Throat channel or through a continuous path of active channels across intermediate defined centers. This is the same graph connectivity used for Definition.
+- A Sacral-defined chart with a motor-to-Throat connection is a Manifesting Generator; without one, it is a Generator.
+- A Sacral-undefined chart with a motor-to-Throat connection is a Manifestor, subject to the remaining Type rules.
 - Authority priority logic exists.
 - Strategy, not_self_theme, and signature are derived from type.
 - Unsupported authority edge cases return `Unknown` or `Needs Review` with warnings rather than hallucinating.
@@ -1487,7 +1500,8 @@ Acceptance criteria:
   - No Definition
   - exactly two disconnected derived components produce the coarse Phase 2 v1 `Split Definition` output without Simple-Split versus Wide-Split classification
   - a direct active motor-to-Throat channel qualifies for Manifesting Generator or Manifestor classification under the remaining Type rules
-  - a multi-hop active-channel path ending at `Throat`, such as `2-14` plus `1-8`, does not qualify by itself as a motor-to-Throat connection
+  - a multi-hop active-channel path connecting a motor to `Throat` through intermediate defined centers, such as `2-14` plus `1-8` (Sacral -> G -> Throat), also qualifies as a motor-to-Throat connection
+  - a chart whose Throat is defined without any motor center reachable through the graph is not classified as Manifesting Generator or Manifestor
   - profile derivation such as `61.4` + `32.6` -> `4/6`
   - gate derivation from planetary columns
   - channel derivation such as gates `3` and `60` -> `3-60`
@@ -1522,8 +1536,8 @@ Testing requirements:
 - Tests should verify derived defined centers equal the canonical-order union of active channel endpoint centers.
 - Tests should cover graph connected components for the coarse Phase 2 v1 Definition taxonomy, including exactly two disconnected components producing `Split Definition`.
 - Tests should not add `Wide-Split Definition` output or bridge-gate logic.
-- Tests should cover direct active canonical motor-to-Throat channel logic for Type classification.
-- Tests should distinguish a qualifying direct active motor-to-Throat channel from a non-qualifying multi-hop graph path ending at `Throat`.
+- Tests should cover motor-to-Throat reachability logic for Type classification, including both direct motor-to-Throat channels and multi-hop paths through intermediate defined centers.
+- Tests should verify a chart with a defined Throat but no reachable motor center is classified as Projector rather than Manifestor.
 - Tests should cover unsupported authority warnings.
 - Tests should not use an LLM or require API keys.
 
@@ -1719,6 +1733,7 @@ Acceptance criteria:
 - Micro-averages may be reported only if clearly labeled.
 - `overall_basic_info_accuracy` is the average of exact-match booleans across profile, type, authority, definition, strategy, not_self_theme, and signature.
 - Warning evaluation compares warning codes and, where useful, severity or `affects_validity` status.
+- Golden `expected_validation_result.warnings` accept bare warning-code strings or full warning objects; unknown warning codes fail loudly at load time (exit 2) instead of silently scoring zero.
 - Evaluation script can run on mocked predictions or saved prediction JSON by default.
 - Real Vision API evaluation is opt-in only.
 - Output clearly shows per-case and aggregate metrics.
@@ -1740,6 +1755,7 @@ Testing requirements:
 - Tests should verify partial raw-only cases are excluded from derived-chart metrics.
 - Tests should cover exact-match metrics and F1 metrics.
 - Tests should cover warning-code precision, recall, F1, and severity or `affects_validity` comparison.
+- Tests should cover bare-string golden warning labels and load-time rejection of unknown warning codes.
 - Tests should cover threshold failure exit behavior through a function or script-level test.
 - Tests should not require private images or API keys.
 
@@ -1773,14 +1789,17 @@ Dependencies:
 Acceptance criteria:
 - CLI accepts an image path.
 - CLI supports `--mock-response` or similar offline mode.
+- The image file must exist even in mock-response mode: mock and real paths share the same entry validation, so a typoed image path fails loudly either way.
 - CLI supports real Vision API only with explicit opt-in, such as `HD_VISION_REAL_API=1`.
 - CLI prints:
   - raw Vision extraction
   - derived chart data
   - validation warnings
+- CLI `--json` output uses the top-level keys `raw_vision`, `derived_chart_data`, and `validation_result`.
 - CLI does not print base64 image data.
 - CLI does not print API keys.
 - CLI exits clearly if real API mode is requested without API key.
+- Real Vision API calls use an explicit finite request timeout and bounded retry count instead of relying on implicit SDK defaults.
 - `.env.example` documents non-secret Phase 2 configuration defaults when they are absent.
 - `.env.example` includes only non-secret placeholder or default values.
 - `.env.example` must not contain a real API key, private image path, personal image filename, or private local directory.
@@ -1815,6 +1834,7 @@ Testing requirements:
 - Tests should monkeypatch or fake the Vision client.
 - Tests should verify disabled real API behavior when `HD_VISION_REAL_API` is not set.
 - Tests should verify mock-response mode can run without an API key.
+- Tests should verify mock-response mode still requires the image file to exist and raises a clear client error when it does not.
 - CLI tests should use `tests/fixtures/bodygraph/test1.png` for mock/offline mode.
 - CLI tests must not depend on `data/bodygraph_samples/images/test1.png`.
 - CLI tests must not require private local images.

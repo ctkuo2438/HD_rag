@@ -21,23 +21,9 @@ from human_design.vision import (
     ValidationSource,
     ValidationWarning,
 )
+from human_design.vision.constants import PLANETARY_FIELDS as PLANET_FIELDS
+from human_design.vision.models import warning_defaults
 
-
-PLANET_FIELDS = (
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-)
 
 PUBLIC_MODEL_NAMES = (
     "Activation",
@@ -61,6 +47,7 @@ EXPECTED_VALIDATION_CODE_VALUES = {
     "INVALID_VISIBLE_CHANNEL",
     "INVALID_VISUALLY_ACTIVE_GATE",
     "INVALID_VISUAL_CENTER",
+    "INVALID_UNCERTAIN_ITEM",
     "VISIBLE_CHANNEL_NOT_DERIVED",
     "DERIVED_CHANNEL_NOT_VISIBLE",
     "VISUALLY_ACTIVE_GATES_MISMATCH",
@@ -156,6 +143,7 @@ def _warning(
     severity: ValidationSeverity = ValidationSeverity.WARNING,
     affects_validity: bool = False,
     source: ValidationSource = ValidationSource.validation,
+    field_path: str = "test.field",
 ) -> ValidationWarning:
     return ValidationWarning(
         code=code,
@@ -163,6 +151,7 @@ def _warning(
         severity=severity,
         affects_validity=affects_validity,
         source=source,
+        field_path=field_path,
     )
 
 
@@ -250,14 +239,23 @@ def test_activation_values_and_none_are_representable() -> None:
     assert design.venus is None
 
 
-def test_out_of_range_integer_activation_values_are_representable() -> None:
-    invalid_gate = Activation(gate=99, line=1)
-    invalid_line = Activation(gate=60, line=9)
+@pytest.mark.parametrize(
+    ("gate", "line"),
+    [(0, 1), (65, 1), (99, 1), (60, 0), (60, 7), (60, 9)],
+)
+def test_out_of_range_activation_values_are_rejected(gate: int, line: int) -> None:
+    # Range validity is an Activation construction invariant: the parser
+    # drops out-of-range raw values, so no in-range violation can exist.
+    with pytest.raises(ValueError):
+        Activation(gate=gate, line=line)
 
-    assert invalid_gate.gate == 99
-    assert invalid_gate.line == 1
-    assert invalid_line.gate == 60
-    assert invalid_line.line == 9
+
+@pytest.mark.parametrize(("gate", "line"), [(1, 1), (64, 6), (34, 3)])
+def test_in_range_activation_values_are_accepted(gate: int, line: int) -> None:
+    activation = Activation(gate=gate, line=line)
+
+    assert activation.gate == gate
+    assert activation.line == line
 
 
 @pytest.mark.parametrize("bad_value", [True, False, "61", 61.0, None])
@@ -416,6 +414,15 @@ def test_validation_code_supports_complete_phase2_warning_contract() -> None:
         assert ValidationCode(code_value).value == code_value
 
 
+def test_every_validation_code_has_registered_warning_defaults() -> None:
+    # An unregistered new ValidationCode must fail loudly (KeyError) instead
+    # of silently falling back to a default severity.
+    for code in ValidationCode:
+        severity, affects_validity = warning_defaults(code)
+        assert isinstance(severity, ValidationSeverity)
+        assert isinstance(affects_validity, bool)
+
+
 def test_validation_warning_exposes_stable_assertion_fields() -> None:
     warning = ValidationWarning(
         code=ValidationCode.MISSING_ACTIVATION,
@@ -423,6 +430,7 @@ def test_validation_warning_exposes_stable_assertion_fields() -> None:
         severity=ValidationSeverity.WARNING,
         affects_validity=True,
         source=ValidationSource.validation,
+        field_path="personality.moon",
     )
 
     assert warning.code is ValidationCode.MISSING_ACTIVATION
@@ -430,6 +438,20 @@ def test_validation_warning_exposes_stable_assertion_fields() -> None:
     assert warning.severity is ValidationSeverity.WARNING
     assert warning.affects_validity is True
     assert warning.source is ValidationSource.validation
+    assert warning.field_path == "personality.moon"
+
+
+@pytest.mark.parametrize("bad_field_path", ["", "   "])
+def test_validation_warning_requires_nonempty_field_path(bad_field_path: str) -> None:
+    with pytest.raises(ValueError, match="field_path"):
+        ValidationWarning(
+            code=ValidationCode.MISSING_ACTIVATION,
+            message="Missing activation.",
+            severity=ValidationSeverity.ERROR,
+            affects_validity=True,
+            source=ValidationSource.validation,
+            field_path=bad_field_path,
+        )
 
 
 def test_validation_result_is_valid_when_no_warning_affects_validity() -> None:
@@ -472,73 +494,45 @@ def test_parse_result_preserves_parser_origin_warnings() -> None:
     assert parse_result.warnings == (parser_warning,)
 
 
-def test_parse_result_merges_parser_and_later_warnings_into_validation() -> None:
-    parser_warning = _warning(
-        code=ValidationCode.VISIBLE_CHANNEL_NORMALIZED,
-        source=ValidationSource.parser,
-    )
-    later_warning = _warning(
-        code=ValidationCode.MISSING_ACTIVATION,
-        source=ValidationSource.validation,
-        affects_validity=True,
-    )
-    parse_result = ParseResult(raw_vision=_raw_vision(), warnings=(parser_warning,))
-
-    validation = parse_result.to_validation_result((later_warning,))
-
-    assert validation.warnings == (parser_warning, later_warning)
-    assert validation.is_valid is False
-
-
-def test_missing_non_sun_activation_warning_data_is_representable() -> None:
-    personality = _activation_column(PersonalityActivationColumn, missing_field="moon")
-    raw = _raw_vision(personality=personality)
-    warning = _warning(
-        code=ValidationCode.MISSING_ACTIVATION,
-        affects_validity=True,
-    )
-    validation = ValidationResult(warnings=(warning,))
-
-    assert raw.personality.moon is None
-    assert validation.warnings[0].code is ValidationCode.MISSING_ACTIVATION
-    assert validation.is_valid is False
-
-
-def test_missing_personality_sun_uses_specific_warning_only() -> None:
-    personality = _activation_column(PersonalityActivationColumn, missing_field="sun")
-    raw = _raw_vision(personality=personality)
-    validation = ValidationResult(
-        warnings=(
-            _warning(
-                code=ValidationCode.MISSING_PERSONALITY_SUN,
-                affects_validity=True,
-            ),
+@pytest.mark.parametrize(
+    ("column_attr", "missing_field", "code"),
+    [
+        ("personality", "moon", ValidationCode.MISSING_ACTIVATION),
+        ("personality", "sun", ValidationCode.MISSING_PERSONALITY_SUN),
+        ("design", "sun", ValidationCode.MISSING_DESIGN_SUN),
+    ],
+)
+def test_missing_activation_scenarios_are_representable(
+    column_attr: str,
+    missing_field: str,
+    code: ValidationCode,
+) -> None:
+    # Unavailable activations coexist with their warning code, Sun fields use
+    # their specific codes without a duplicate generic MISSING_ACTIVATION,
+    # and any of these codes invalidates the result. Behavior for producing
+    # these warnings lives in the parser/validation tests; this pins that the
+    # models can represent every scenario.
+    if column_attr == "personality":
+        raw = _raw_vision(
+            personality=_activation_column(
+                PersonalityActivationColumn, missing_field=missing_field
+            )
         )
+    else:
+        raw = _raw_vision(
+            design=_activation_column(
+                DesignActivationColumn, missing_field=missing_field
+            )
+        )
+    validation = ValidationResult(
+        warnings=(_warning(code=code, affects_validity=True),)
     )
 
     codes = tuple(warning.code for warning in validation.warnings)
-    assert raw.personality.sun is None
-    assert codes == (ValidationCode.MISSING_PERSONALITY_SUN,)
-    assert ValidationCode.MISSING_ACTIVATION not in codes
-    assert validation.is_valid is False
-
-
-def test_missing_design_sun_uses_specific_warning_only() -> None:
-    design = _activation_column(DesignActivationColumn, missing_field="sun")
-    raw = _raw_vision(design=design)
-    validation = ValidationResult(
-        warnings=(
-            _warning(
-                code=ValidationCode.MISSING_DESIGN_SUN,
-                affects_validity=True,
-            ),
-        )
-    )
-
-    codes = tuple(warning.code for warning in validation.warnings)
-    assert raw.design.sun is None
-    assert codes == (ValidationCode.MISSING_DESIGN_SUN,)
-    assert ValidationCode.MISSING_ACTIVATION not in codes
+    assert getattr(getattr(raw, column_attr), missing_field) is None
+    assert codes == (code,)
+    if code is not ValidationCode.MISSING_ACTIVATION:
+        assert ValidationCode.MISSING_ACTIVATION not in codes
     assert validation.is_valid is False
 
 
@@ -546,12 +540,12 @@ def test_bodygraph_extraction_result_represents_full_structured_output() -> None
     result = BodyGraphExtractionResult(
         raw_vision=_raw_vision(),
         derived_chart_data=_derived_chart_data(),
-        validation=ValidationResult(warnings=()),
+        validation_result=ValidationResult(warnings=()),
     )
 
     assert result.raw_vision.personality.sun == Activation(gate=1, line=1)
     assert result.derived_chart_data.basic_info.type == "Manifesting Generator"
-    assert result.validation.is_valid is True
+    assert result.validation_result.is_valid is True
 
 
 def test_models_are_immutable() -> None:

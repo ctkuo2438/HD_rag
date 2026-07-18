@@ -3,25 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import fields
 
-from human_design.vision.constants import ALL_CHANNELS, CANONICAL_CENTERS
+from human_design.vision.constants import ALL_CHANNELS, PLANETARY_FIELDS
 from human_design.vision.interpreter import BodyGraphInterpretationResult
 from human_design.vision.models import (
-    Activation,
     DerivedChartData,
     ParseResult,
     RawVisionExtraction,
     ValidationCode,
     ValidationResult,
-    ValidationSeverity,
     ValidationSource,
     ValidationWarning,
+    warning_defaults,
 )
 
 
 _ALL_CHANNELS_SET = frozenset(ALL_CHANNELS)
-_CANONICAL_CENTERS_SET = frozenset(CANONICAL_CENTERS)
+
+# Parser codes that already account for an activation field being unusable.
+# When the parser warned for a field, validation must not double-report it.
 _ACTIVATION_WARNING_CODES = frozenset(
     {
         ValidationCode.MISSING_PERSONALITY_SUN,
@@ -55,26 +55,34 @@ def validate_bodygraph_components(
     parser_warnings: tuple[ValidationWarning, ...] = (),
     interpreter_warnings: tuple[ValidationWarning, ...] = (),
 ) -> ValidationResult:
-    """Validate raw facts against deterministic derived chart data."""
+    """Validate raw facts against deterministic derived chart data.
+
+    Completeness policy: every activation column field must hold a value.
+    A single missing planet (JSON null) makes the whole result invalid,
+    because active_gates derive from all 26 activations; one missing planet
+    can silently drop a gate, a channel, and flip type/authority. The parser
+    treats null as an honest empty value; completeness is judged here.
+    """
     merged_warnings: list[ValidationWarning] = [
         *parser_warnings,
         *interpreter_warnings,
     ]
-    validation_warnings: list[ValidationWarning] = []
 
-    validation_warnings.extend(_activation_warnings(raw_vision, parser_warnings))
-    validation_warnings.extend(
-        _visible_channel_warnings(raw_vision, derived_chart_data)
-    )
-    validation_warnings.extend(_visual_gate_warnings(raw_vision, derived_chart_data))
-    validation_warnings.extend(_visual_center_warnings(raw_vision, derived_chart_data))
-    validation_warnings.extend(_reflector_consistency_warnings(derived_chart_data))
-    validation_warnings.extend(
-        _unsupported_authority_warnings(derived_chart_data, merged_warnings)
-    )
+    validation_warnings: list[ValidationWarning] = [
+        *_activation_warnings(raw_vision, parser_warnings),
+        *_visible_channel_warnings(raw_vision, derived_chart_data),
+        *_visual_gate_warnings(raw_vision, derived_chart_data),
+        *_visual_center_warnings(raw_vision, derived_chart_data),
+        *_reflector_consistency_warnings(derived_chart_data),
+        *_unsupported_authority_warnings(derived_chart_data, merged_warnings),
+    ]
 
+    seen = {_warning_key(warning) for warning in merged_warnings}
     for warning in validation_warnings:
-        _append_warning_if_new(merged_warnings, warning)
+        key = _warning_key(warning)
+        if key not in seen:
+            seen.add(key)
+            merged_warnings.append(warning)
 
     return ValidationResult(warnings=tuple(merged_warnings))
 
@@ -83,35 +91,25 @@ def _activation_warnings(
     raw_vision: RawVisionExtraction,
     parser_warnings: tuple[ValidationWarning, ...],
 ) -> tuple[ValidationWarning, ...]:
+    # An existing Activation is in-range by construction (models enforces it),
+    # so the only thing left to check here is completeness.
     warnings: list[ValidationWarning] = []
     for column_name, column in (
         ("personality", raw_vision.personality),
         ("design", raw_vision.design),
     ):
-        for field in fields(column):
-            field_name = field.name
-            field_path = f"{column_name}.{field_name}"
-            activation = getattr(column, field_name)
-
-            if activation is None:
-                if _parser_warned_for_activation_field(parser_warnings, field_path):
-                    continue
-                warnings.append(
-                    _validation_warning(
-                        _missing_activation_code(column_name, field_name),
-                        field_path,
-                    )
-                )
+        for field_name in PLANETARY_FIELDS:
+            if getattr(column, field_name) is not None:
                 continue
-
-            warnings.extend(
-                _invalid_activation_warnings(
-                    activation,
+            field_path = f"{column_name}.{field_name}"
+            if _parser_warned_for_activation_field(parser_warnings, field_path):
+                continue
+            warnings.append(
+                _validation_warning(
+                    _missing_activation_code(column_name, field_name),
                     field_path,
-                    parser_warnings,
                 )
             )
-
     return tuple(warnings)
 
 
@@ -123,31 +121,6 @@ def _missing_activation_code(column_name: str, field_name: str) -> ValidationCod
     return ValidationCode.MISSING_ACTIVATION
 
 
-def _invalid_activation_warnings(
-    activation: Activation,
-    field_path: str,
-    parser_warnings: tuple[ValidationWarning, ...],
-) -> tuple[ValidationWarning, ...]:
-    warnings: list[ValidationWarning] = []
-    if not 1 <= activation.gate <= 64 and not _parser_warned_for_activation_code(
-        parser_warnings,
-        field_path,
-        ValidationCode.INVALID_ACTIVATION_GATE,
-    ):
-        warnings.append(
-            _validation_warning(ValidationCode.INVALID_ACTIVATION_GATE, field_path)
-        )
-    if not 1 <= activation.line <= 6 and not _parser_warned_for_activation_code(
-        parser_warnings,
-        field_path,
-        ValidationCode.INVALID_ACTIVATION_LINE,
-    ):
-        warnings.append(
-            _validation_warning(ValidationCode.INVALID_ACTIVATION_LINE, field_path)
-        )
-    return tuple(warnings)
-
-
 def _parser_warned_for_activation_field(
     parser_warnings: tuple[ValidationWarning, ...],
     field_path: str,
@@ -155,29 +128,9 @@ def _parser_warned_for_activation_field(
     return any(
         warning.source is ValidationSource.parser
         and warning.code in _ACTIVATION_WARNING_CODES
-        and _warning_mentions_field_path(warning, field_path)
+        and warning.field_path == field_path
         for warning in parser_warnings
     )
-
-
-def _parser_warned_for_activation_code(
-    parser_warnings: tuple[ValidationWarning, ...],
-    field_path: str,
-    code: ValidationCode,
-) -> bool:
-    return any(
-        warning.source is ValidationSource.parser
-        and warning.code is code
-        and _warning_mentions_field_path(warning, field_path)
-        for warning in parser_warnings
-    )
-
-
-def _warning_mentions_field_path(
-    warning: ValidationWarning,
-    field_path: str,
-) -> bool:
-    return f" at {field_path}" in warning.message
 
 
 def _visible_channel_warnings(
@@ -190,6 +143,8 @@ def _visible_channel_warnings(
 
     for index, channel in enumerate(visible_channels):
         field_path = f"visible_colored_channels[{index}]"
+        # Reachable via the public components API: RawVisionExtraction does
+        # not constrain channel strings, only the parser does.
         if channel not in _ALL_CHANNELS_SET:
             warnings.append(
                 _validation_warning(ValidationCode.INVALID_VISIBLE_CHANNEL, field_path)
@@ -234,9 +189,7 @@ def _visual_center_warnings(
     raw_vision: RawVisionExtraction,
     derived_chart_data: DerivedChartData,
 ) -> tuple[ValidationWarning, ...]:
-    visual_centers = _center_set(raw_vision.visually_defined_centers)
-    derived_centers = _center_set(derived_chart_data.defined_centers)
-    if visual_centers == derived_centers:
+    if set(raw_vision.visually_defined_centers) == set(derived_chart_data.defined_centers):
         return ()
     return (
         _validation_warning(
@@ -244,14 +197,6 @@ def _visual_center_warnings(
             "visually_defined_centers",
         ),
     )
-
-
-def _center_set(centers: Iterable[str]) -> set[str]:
-    center_tuple = tuple(centers)
-    return {
-        *(center for center in CANONICAL_CENTERS if center in center_tuple),
-        *(center for center in center_tuple if center not in _CANONICAL_CENTERS_SET),
-    }
 
 
 def _reflector_consistency_warnings(
@@ -297,46 +242,19 @@ def _validation_warning(
     code: ValidationCode,
     field_path: str,
 ) -> ValidationWarning:
-    severity, affects_validity = _warning_defaults(code)
+    severity, affects_validity = warning_defaults(code)
     return ValidationWarning(
         code=code,
         message=f"{code.value} at {field_path}",
         severity=severity,
         affects_validity=affects_validity,
         source=ValidationSource.validation,
+        field_path=field_path,
     )
 
 
-def _warning_defaults(code: ValidationCode) -> tuple[ValidationSeverity, bool]:
-    if code is ValidationCode.VISIBLE_CHANNEL_NORMALIZED:
-        return ValidationSeverity.INFO, False
-    if code in {
-        ValidationCode.INVALID_VISIBLE_CHANNEL,
-        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
-        ValidationCode.INVALID_VISUAL_CENTER,
-        ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
-        ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
-        ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,
-        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
-        ValidationCode.UNSUPPORTED_AUTHORITY,
-    }:
-        return ValidationSeverity.WARNING, False
-    return ValidationSeverity.ERROR, True
-
-
-def _append_warning_if_new(
-    warnings: list[ValidationWarning],
-    warning: ValidationWarning,
-) -> None:
-    warning_key = _warning_key(warning)
-    if warning_key not in {_warning_key(existing) for existing in warnings}:
-        warnings.append(warning)
-
-
-def _warning_key(
-    warning: ValidationWarning,
-) -> tuple[ValidationCode, str]:
-    return warning.code, warning.message
+def _warning_key(warning: ValidationWarning) -> tuple[ValidationCode, str]:
+    return warning.code, warning.field_path
 
 
 __all__ = [

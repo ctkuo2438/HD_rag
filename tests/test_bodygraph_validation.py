@@ -20,6 +20,7 @@ from human_design.vision.models import (
     ValidationSeverity,
     ValidationSource,
     ValidationWarning,
+    warning_defaults,
 )
 from human_design.vision.parser import parse_bodygraph_raw_extraction_json
 from human_design.vision.validation import (
@@ -142,7 +143,7 @@ def _warning(
     affects_validity: bool | None = None,
     field_path: str = "test.field",
 ) -> ValidationWarning:
-    default_severity, default_affects_validity = _expected_defaults(code)
+    default_severity, default_affects_validity = warning_defaults(code)
     return ValidationWarning(
         code=code,
         message=f"{code.value} at {field_path}",
@@ -153,26 +154,8 @@ def _warning(
             else affects_validity
         ),
         source=source,
+        field_path=field_path,
     )
-
-
-def _expected_defaults(
-    code: ValidationCode,
-) -> tuple[ValidationSeverity, bool]:
-    if code is ValidationCode.VISIBLE_CHANNEL_NORMALIZED:
-        return ValidationSeverity.INFO, False
-    if code in {
-        ValidationCode.INVALID_VISIBLE_CHANNEL,
-        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
-        ValidationCode.INVALID_VISUAL_CENTER,
-        ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED,
-        ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE,
-        ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH,
-        ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH,
-        ValidationCode.UNSUPPORTED_AUTHORITY,
-    }:
-        return ValidationSeverity.WARNING, False
-    return ValidationSeverity.ERROR, True
 
 
 def _warnings_by_code(
@@ -408,35 +391,6 @@ def test_missing_activation_validation_warnings_invalidate(
         assert ValidationCode.MISSING_ACTIVATION not in _warning_codes(result)
     if expected_code is ValidationCode.MISSING_DESIGN_SUN:
         assert ValidationCode.MISSING_ACTIVATION not in _warning_codes(result)
-
-
-@pytest.mark.parametrize(
-    ("activation", "expected_code"),
-    [
-        (_activation(99, 1), ValidationCode.INVALID_ACTIVATION_GATE),
-        (_activation(60, 9), ValidationCode.INVALID_ACTIVATION_LINE),
-    ],
-)
-def test_invalid_activation_values_invalidate(
-    activation: Activation,
-    expected_code: ValidationCode,
-) -> None:
-    raw = _raw_with_gates(
-        (3, 60),
-        personality_overrides={"moon": activation},
-    )
-
-    result = _validation_for_raw(raw)
-
-    assert _warning_codes(result) == (expected_code,)
-    _assert_warning_metadata(
-        result.warnings[0],
-        code=expected_code,
-        severity=ValidationSeverity.ERROR,
-        affects_validity=True,
-        source=ValidationSource.validation,
-    )
-    assert result.is_valid is False
 
 
 def test_parser_activation_warnings_are_not_duplicated_by_validation() -> None:

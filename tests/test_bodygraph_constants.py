@@ -4,6 +4,24 @@ from human_design.vision.constants import (
     CENTER_ALIASES,
     CHANNEL_TO_CENTERS,
     MOTOR_CENTERS,
+    PLANETARY_FIELDS,
+)
+
+
+EXPECTED_PLANETARY_FIELDS = (
+    "sun",
+    "earth",
+    "north_node",
+    "south_node",
+    "moon",
+    "mercury",
+    "venus",
+    "mars",
+    "jupiter",
+    "saturn",
+    "uranus",
+    "neptune",
+    "pluto",
 )
 
 
@@ -164,6 +182,12 @@ def test_representative_channel_center_mappings_are_explicit() -> None:
     assert CHANNEL_TO_CENTERS["21-45"] == ("Ego", "Throat")
     assert CHANNEL_TO_CENTERS["24-61"] == ("Ajna", "Head")
     assert CHANNEL_TO_CENTERS["37-40"] == ("Solar Plexus", "Ego")
+
+
+def test_planetary_fields_are_exact_ordered_thirteen_field_tuple() -> None:
+    assert PLANETARY_FIELDS == EXPECTED_PLANETARY_FIELDS
+    assert len(PLANETARY_FIELDS) == 13
+    assert len(set(PLANETARY_FIELDS)) == len(PLANETARY_FIELDS)
 
 
 def test_motor_centers_are_exact_canonical_frozenset() -> None:

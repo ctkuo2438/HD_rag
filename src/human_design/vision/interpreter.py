@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 from human_design.vision.constants import (
     ALL_CHANNELS,
     CANONICAL_CENTERS,
     CHANNEL_TO_CENTERS,
     MOTOR_CENTERS,
+    PLANETARY_FIELDS,
 )
 from human_design.vision.models import (
     Activation,
@@ -17,9 +18,9 @@ from human_design.vision.models import (
     DerivedChartData,
     RawVisionExtraction,
     ValidationCode,
-    ValidationSeverity,
     ValidationSource,
     ValidationWarning,
+    warning_defaults,
 )
 
 
@@ -32,6 +33,9 @@ _TYPE_TO_LIFE_FIELDS: dict[str, tuple[str, str, str]] = {
 }
 
 _SELF_PROJECTED_CHANNELS = frozenset({"1-8", "7-31", "10-20", "13-33"})
+
+# Adjacency map between defined centers, built from active channels.
+_CenterGraph = dict[str, set[str]]
 
 
 @dataclass(frozen=True)
@@ -57,21 +61,22 @@ def interpret_bodygraph(raw_vision: RawVisionExtraction) -> BodyGraphInterpretat
     active_gates = derive_active_gates(raw_vision)
     active_channels = derive_active_channels(active_gates)
     defined_centers = derive_defined_centers(active_channels)
+    center_graph = _build_center_graph(defined_centers, active_channels)
 
-    chart_type = _derive_type(defined_centers, active_channels)
+    chart_type = _derive_type(defined_centers, center_graph)
     authority, warnings = _derive_authority(
         chart_type,
         defined_centers,
         active_channels,
     )
-    strategy, not_self_theme, signature = _derive_type_life_fields(chart_type)
+    strategy, not_self_theme, signature = _TYPE_TO_LIFE_FIELDS[chart_type]
 
     basic_info = DerivedBasicInfo(
         type=chart_type,
         authority=authority,
         profile=_derive_profile(raw_vision),
         strategy=strategy,
-        definition=_derive_definition(defined_centers, active_channels),
+        definition=_derive_definition(center_graph),
         not_self_theme=not_self_theme,
         signature=signature,
     )
@@ -88,13 +93,11 @@ def interpret_bodygraph(raw_vision: RawVisionExtraction) -> BodyGraphInterpretat
 
 
 def derive_active_gates(raw_vision: RawVisionExtraction) -> tuple[int, ...]:
-    """Return sorted unique valid gate numbers from activation columns only."""
-    active_gates = {
-        activation.gate
-        for activation in _iter_activations(raw_vision)
-        if 1 <= activation.gate <= 64
-    }
-    return tuple(sorted(active_gates))
+    """Return sorted unique gate numbers from activation columns only.
+
+    Range validity is guaranteed by ``Activation`` at construction time.
+    """
+    return tuple(sorted({activation.gate for activation in _iter_activations(raw_vision)}))
 
 
 def derive_active_channels(active_gates: Iterable[int]) -> tuple[str, ...]:
@@ -118,8 +121,8 @@ def derive_defined_centers(active_channels: Iterable[str]) -> tuple[str, ...]:
 
 def _iter_activations(raw_vision: RawVisionExtraction) -> Iterable[Activation]:
     for column in (raw_vision.personality, raw_vision.design):
-        for field in fields(column):
-            activation = getattr(column, field.name)
+        for field_name in PLANETARY_FIELDS:
+            activation = getattr(column, field_name)
             if activation is not None:
                 yield activation
 
@@ -127,6 +130,20 @@ def _iter_activations(raw_vision: RawVisionExtraction) -> Iterable[Activation]:
 def _channel_gate_pair(channel: str) -> tuple[int, int]:
     gate_a, gate_b = channel.split("-", maxsplit=1)
     return int(gate_a), int(gate_b)
+
+
+def _build_center_graph(
+    defined_centers: tuple[str, ...],
+    active_channels: tuple[str, ...],
+) -> _CenterGraph:
+    """Build the adjacency map between defined centers from active channels."""
+    graph: _CenterGraph = {center: set() for center in defined_centers}
+    for channel in active_channels:
+        center_a, center_b = CHANNEL_TO_CENTERS[channel]
+        if center_a in graph and center_b in graph:
+            graph[center_a].add(center_b)
+            graph[center_b].add(center_a)
+    return graph
 
 
 def _derive_profile(raw_vision: RawVisionExtraction) -> str:
@@ -137,21 +154,11 @@ def _derive_profile(raw_vision: RawVisionExtraction) -> str:
     return f"{personality_sun.line}/{design_sun.line}"
 
 
-def _derive_definition(
-    defined_centers: tuple[str, ...],
-    active_channels: tuple[str, ...],
-) -> str:
-    if not defined_centers:
+def _derive_definition(center_graph: _CenterGraph) -> str:
+    if not center_graph:
         return "No Definition"
 
-    graph = {center: set[str]() for center in defined_centers}
-    for channel in active_channels:
-        center_a, center_b = CHANNEL_TO_CENTERS[channel]
-        if center_a in graph and center_b in graph:
-            graph[center_a].add(center_b)
-            graph[center_b].add(center_a)
-
-    component_count = _count_connected_components(graph)
+    component_count = _count_connected_components(center_graph)
     if component_count == 1:
         return "Single Definition"
     if component_count == 2:
@@ -161,7 +168,7 @@ def _derive_definition(
     return "Quadruple Split Definition"
 
 
-def _count_connected_components(graph: dict[str, set[str]]) -> int:
+def _count_connected_components(graph: _CenterGraph) -> int:
     visited: set[str] = set()
     component_count = 0
 
@@ -182,28 +189,34 @@ def _count_connected_components(graph: dict[str, set[str]]) -> int:
 
 def _derive_type(
     defined_centers: tuple[str, ...],
-    active_channels: tuple[str, ...],
+    center_graph: _CenterGraph,
 ) -> str:
-    defined_center_set = set(defined_centers)
-    if not defined_center_set:
+    if not defined_centers:
         return "Reflector"
 
-    has_direct_motor_to_throat = _has_direct_motor_to_throat(active_channels)
-    if "Sacral" in defined_center_set:
-        if has_direct_motor_to_throat:
-            return "Manifesting Generator"
-        return "Generator"
-
-    if has_direct_motor_to_throat:
-        return "Manifestor"
-    return "Projector"
+    # Standard rule: a motor connected to the Throat (directly OR through
+    # intermediate centers) is what distinguishes MG/Manifestor charts.
+    motor_to_throat = _throat_connected_to_motor(center_graph)
+    if "Sacral" in center_graph:
+        return "Manifesting Generator" if motor_to_throat else "Generator"
+    return "Manifestor" if motor_to_throat else "Projector"
 
 
-def _has_direct_motor_to_throat(active_channels: tuple[str, ...]) -> bool:
-    for channel in active_channels:
-        centers = set(CHANNEL_TO_CENTERS[channel])
-        if "Throat" in centers and centers.intersection(MOTOR_CENTERS):
+def _throat_connected_to_motor(center_graph: _CenterGraph) -> bool:
+    """Return True if any motor center reaches the Throat through the graph."""
+    if "Throat" not in center_graph:
+        return False
+
+    visited: set[str] = set()
+    stack = ["Throat"]
+    while stack:
+        current = stack.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        if current in MOTOR_CENTERS:
             return True
+        stack.extend(center_graph[current] - visited)
     return False
 
 
@@ -233,17 +246,15 @@ def _derive_authority(
 
 
 def _unsupported_authority_warning() -> ValidationWarning:
+    severity, affects_validity = warning_defaults(ValidationCode.UNSUPPORTED_AUTHORITY)
     return ValidationWarning(
         code=ValidationCode.UNSUPPORTED_AUTHORITY,
         message="Authority could not be derived by Phase 2 v1 rules.",
-        severity=ValidationSeverity.WARNING,
-        affects_validity=False,
+        severity=severity,
+        affects_validity=affects_validity,
         source=ValidationSource.interpreter,
+        field_path="derived_chart_data.basic_info.authority",
     )
-
-
-def _derive_type_life_fields(chart_type: str) -> tuple[str, str, str]:
-    return _TYPE_TO_LIFE_FIELDS.get(chart_type, ("Unknown", "Unknown", "Unknown"))
 
 
 __all__ = [

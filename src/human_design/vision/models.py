@@ -1,24 +1,3 @@
-"""
-Typed models for Phase 2 BodyGraph Vision extraction.
-
-Vision API original observe
-    ↓
-RawVisionExtraction
-    ↓
-Parser preserve normalization warnings
-    ↓
-ParseResult
-    ↓
-Interpreter generate deterministic chart facts
-    ↓
-DerivedChartData
-    ↓
-ValidationResult
-    ↓
-BodyGraphExtractionResult
-
-"""
-
 from __future__ import annotations
 
 import math
@@ -28,22 +7,7 @@ from enum import StrEnum
 from numbers import Real
 from typing import TypeVar
 
-
-_PLANETARY_FIELDS = (
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-)
+from human_design.vision.constants import PLANETARY_FIELDS
 
 _RAW_VISION_COLLECTION_FIELDS = frozenset(
     (
@@ -61,9 +25,9 @@ _EnumT = TypeVar("_EnumT", bound=StrEnum)
 class Activation:
     """A typed Human Design Gate.Line activation value.
 
-    Task 16 guarantees integer Gate.Line storage only. Task 18 parser behavior
-    records malformed or out-of-range activation issues, and Task 20 validation
-    determines final validity using structured warnings.
+    Range validity (gate 1-64, line 1-6) is enforced here, so any existing
+    Activation instance is guaranteed in-range by construction. The parser
+    drops out-of-range raw values with a warning before ever constructing one.
     """
 
     gate: int
@@ -72,6 +36,10 @@ class Activation:
     def __post_init__(self) -> None:
         _validate_integer(self.gate, "gate")
         _validate_integer(self.line, "line")
+        if not 1 <= self.gate <= 64:
+            raise ValueError("gate must be between 1 and 64")
+        if not 1 <= self.line <= 6:
+            raise ValueError("line must be between 1 and 6")
 
 
 @dataclass(frozen=True)
@@ -260,6 +228,37 @@ class ValidationCode(StrEnum):
     INVALID_ACTIVATION_GATE = "INVALID_ACTIVATION_GATE"
     INVALID_ACTIVATION_LINE = "INVALID_ACTIVATION_LINE"
     INCONSISTENT_DERIVED_CHART = "INCONSISTENT_DERIVED_CHART"
+    INVALID_UNCERTAIN_ITEM = "INVALID_UNCERTAIN_ITEM"
+
+
+_WARNING_DEFAULTS: dict[ValidationCode, tuple[ValidationSeverity, bool]] = {
+    ValidationCode.VISIBLE_CHANNEL_NORMALIZED: (ValidationSeverity.INFO, False),
+    ValidationCode.INVALID_VISIBLE_CHANNEL: (ValidationSeverity.WARNING, False),
+    ValidationCode.INVALID_VISUALLY_ACTIVE_GATE: (ValidationSeverity.WARNING, False),
+    ValidationCode.INVALID_VISUAL_CENTER: (ValidationSeverity.WARNING, False),
+    ValidationCode.INVALID_UNCERTAIN_ITEM: (ValidationSeverity.WARNING, False),
+    ValidationCode.VISIBLE_CHANNEL_NOT_DERIVED: (ValidationSeverity.WARNING, False),
+    ValidationCode.DERIVED_CHANNEL_NOT_VISIBLE: (ValidationSeverity.WARNING, False),
+    ValidationCode.VISUALLY_ACTIVE_GATES_MISMATCH: (ValidationSeverity.WARNING, False),
+    ValidationCode.VISUALLY_DEFINED_CENTERS_MISMATCH: (ValidationSeverity.WARNING, False),
+    ValidationCode.UNSUPPORTED_AUTHORITY: (ValidationSeverity.WARNING, False),
+    ValidationCode.MISSING_PERSONALITY_SUN: (ValidationSeverity.ERROR, True),
+    ValidationCode.MISSING_DESIGN_SUN: (ValidationSeverity.ERROR, True),
+    ValidationCode.MISSING_ACTIVATION: (ValidationSeverity.ERROR, True),
+    ValidationCode.MALFORMED_ACTIVATION: (ValidationSeverity.ERROR, True),
+    ValidationCode.INVALID_ACTIVATION_GATE: (ValidationSeverity.ERROR, True),
+    ValidationCode.INVALID_ACTIVATION_LINE: (ValidationSeverity.ERROR, True),
+    ValidationCode.INCONSISTENT_DERIVED_CHART: (ValidationSeverity.ERROR, True),
+}
+
+
+def warning_defaults(code: ValidationCode) -> tuple[ValidationSeverity, bool]:
+    """Return the canonical (severity, affects_validity) for a warning code.
+
+    Every ValidationCode must be registered in _WARNING_DEFAULTS; an
+    unregistered code raises KeyError instead of silently defaulting.
+    """
+    return _WARNING_DEFAULTS[code]
 
 
 @dataclass(frozen=True)
@@ -271,6 +270,7 @@ class ValidationWarning:
     severity: ValidationSeverity
     affects_validity: bool
     source: ValidationSource
+    field_path: str
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -293,6 +293,8 @@ class ValidationWarning:
             raise ValueError("message must be a non-empty string")
         if not isinstance(self.affects_validity, bool):
             raise TypeError("affects_validity must be a bool")
+        if not isinstance(self.field_path, str) or not self.field_path.strip():
+            raise ValueError("field_path must be a non-empty string")
 
 
 @dataclass(frozen=True)
@@ -328,18 +330,6 @@ class ParseResult:
             _typed_tuple(self.warnings, ValidationWarning, "warnings"),
         )
 
-    def to_validation_result(
-        self,
-        later_warnings: Iterable[ValidationWarning] = (),
-    ) -> ValidationResult:
-        """Merge parser warnings with later warnings into validation output."""
-        later_warning_tuple = _typed_tuple(
-            later_warnings,
-            ValidationWarning,
-            "later_warnings",
-        )
-        return ValidationResult(warnings=(*self.warnings, *later_warning_tuple))
-
 
 @dataclass(frozen=True)
 class BodyGraphExtractionResult:
@@ -347,15 +337,15 @@ class BodyGraphExtractionResult:
 
     raw_vision: RawVisionExtraction
     derived_chart_data: DerivedChartData
-    validation: ValidationResult
+    validation_result: ValidationResult
 
     def __post_init__(self) -> None:
         if not isinstance(self.raw_vision, RawVisionExtraction):
             raise TypeError("raw_vision must be RawVisionExtraction")
         if not isinstance(self.derived_chart_data, DerivedChartData):
             raise TypeError("derived_chart_data must be DerivedChartData")
-        if not isinstance(self.validation, ValidationResult):
-            raise TypeError("validation must be ValidationResult")
+        if not isinstance(self.validation_result, ValidationResult):
+            raise TypeError("validation_result must be ValidationResult")
 
 
 def _validate_integer(value: object, field_name: str) -> None:
@@ -366,7 +356,7 @@ def _validate_integer(value: object, field_name: str) -> None:
 def _validate_activation_column(
     column: PersonalityActivationColumn | DesignActivationColumn,
 ) -> None:
-    for field_name in _PLANETARY_FIELDS:
+    for field_name in PLANETARY_FIELDS:
         value = getattr(column, field_name)
         if value is not None and not isinstance(value, Activation):
             raise TypeError(f"{field_name} must be Activation or None")
@@ -397,7 +387,7 @@ def _validate_uncertain_field_path(field_path: object) -> None:
 def _is_raw_vision_field_path(field_path: str) -> bool:
     if "." in field_path:
         container, field_name = field_path.split(".", maxsplit=1)
-        return container in {"personality", "design"} and field_name in _PLANETARY_FIELDS
+        return container in {"personality", "design"} and field_name in PLANETARY_FIELDS
 
     if "[" in field_path or "]" in field_path:
         return _is_indexed_raw_collection_path(field_path)
@@ -477,6 +467,7 @@ __all__ = [
     "ValidationCode",
     "ValidationWarning",
     "ValidationResult",
+    "warning_defaults",
     "ParseResult",
     "BodyGraphExtractionResult",
 ]

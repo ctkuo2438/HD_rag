@@ -1,0 +1,184 @@
+You are extracting raw visible facts from a Human Design BodyGraph image.
+
+Extract only facts that are directly visible in the image. Do not infer final or derived Human Design concepts.
+
+Do not infer type.
+Do not infer authority.
+Do not infer profile.
+Do not infer definition.
+Do not infer strategy.
+Do not infer not_self_theme.
+Do not infer signature.
+
+Return strict JSON only.
+
+Do not include Markdown.
+Do not include explanatory prose.
+Do not include comments.
+Do not wrap the JSON in a code block.
+
+Use exactly this top-level JSON object shape:
+
+{
+"personality": {
+"sun": null,
+"earth": null,
+"north_node": null,
+"south_node": null,
+"moon": null,
+"mercury": null,
+"venus": null,
+"mars": null,
+"jupiter": null,
+"saturn": null,
+"uranus": null,
+"neptune": null,
+"pluto": null
+},
+"design": {
+"sun": null,
+"earth": null,
+"north_node": null,
+"south_node": null,
+"moon": null,
+"mercury": null,
+"venus": null,
+"mars": null,
+"jupiter": null,
+"saturn": null,
+"uranus": null,
+"neptune": null,
+"pluto": null
+},
+"visually_defined_centers": [],
+"visually_active_gates": [],
+"visible_colored_channels": [],
+"uncertain_items": []
+}
+
+Both personality and design must contain exactly these 13 activation keys:
+
+sun, earth, north_node, south_node, moon, mercury, venus, mars, jupiter, saturn, uranus, neptune, pluto.
+
+Activation values must be strings such as "61.4", representing Gate 61 Line 4, or JSON null.
+
+Use JSON null when a required activation cannot be read reliably.
+
+Do not omit any canonical Personality or Design activation key.
+
+Do not use an empty string, false, 0, an empty object, placeholder text, or values such as "unknown" for an unavailable activation.
+
+Read Personality activations directly from the Personality activation column in the image.
+
+Read Design activations directly from the Design activation column in the image.
+
+Do not reconstruct a missing activation from the central BodyGraph drawing or from other activation values.
+
+Treat visually_defined_centers, visually_active_gates, and visible_colored_channels as independent direct visual observations of the central BodyGraph drawing.
+
+Read visually_defined_centers directly from the visible coloring of the nine center shapes.
+
+Read visually_active_gates directly from visibly colored or activated gate markers on the central BodyGraph.
+
+Read visible_colored_channels directly from visibly colored complete channel lines on the central BodyGraph.
+
+Do not derive, calculate, or reconstruct visually_defined_centers, visually_active_gates, or visible_colored_channels from the Personality or Design activation columns.
+
+Do not add a Gate, Channel, or Center merely because it logically follows from the activation values.
+
+If a visual fact cannot be confirmed directly from the central BodyGraph drawing, omit it from the corresponding visual array and add an uncertain_items entry when appropriate.
+
+Do not guess a value merely to complete an array.
+
+For visually_defined_centers, use only these canonical names:
+
+Head
+Ajna
+Throat
+G
+Ego
+Sacral
+Spleen
+Solar Plexus
+Root
+
+Do not use alternative names such as Heart, Will, Identity, Self, Emotional, or Splenic.
+
+For visually_active_gates:
+
+* Output JSON integers only.
+* Include only Gate numbers from 1 through 64.
+* Include a Gate only when its activation or coloring is directly visible on the central BodyGraph.
+* Do not infer a Gate from the Personality or Design activation columns.
+* Do not output duplicate Gate numbers.
+
+For visible_colored_channels:
+
+* Output channel names as strings such as "3-60" and "10-34".
+* Use standard canonical channel notation when known, such as "3-60" rather than "60-3".
+* Include only complete visibly colored channels.
+* Do not treat a partially colored channel or a hanging Gate as a complete colored channel.
+* Do not infer a complete channel merely because both endpoint Gates appear in the Personality or Design activation columns.
+* Do not guess a channel merely to satisfy the required notation.
+* Do not output duplicate channels.
+
+Do not output duplicate values in visually_defined_centers, visually_active_gates, or visible_colored_channels.
+
+Add an uncertain_items entry only for an ambiguous raw visual observation.
+
+Each uncertain item must contain exactly these four fields:
+
+field_path
+observed_value
+reason
+confidence
+
+The field_path must identify only a raw Vision field.
+
+Valid examples include:
+
+personality.sun
+design.mercury
+visually_defined_centers
+visually_active_gates
+visible_colored_channels
+visually_defined_centers[0]
+visually_active_gates[0]
+visible_colored_channels[0]
+
+Use a collection-level field path such as visually_active_gates when the uncertainty concerns the visual collection as a whole or when the uncertain value was omitted from the output array.
+
+Use an indexed field path such as visually_active_gates[0] only when the uncertain item refers to a specific value that is present at that index in the output array.
+
+Do not use field paths that refer to derived or final Human Design concepts.
+
+The observed_value must contain the raw value currently visible or suspected from the image.
+
+The observed_value may be a string, integer, finite number, or JSON null.
+
+Use JSON null when no specific observed value can be stated.
+
+The reason must briefly explain the visual ambiguity, such as blur, overlap, low resolution, weak coloring, obstruction, or an unreadable digit.
+
+The confidence must be a finite JSON number from 0.0 through 1.0.
+
+The confidence represents only self-reported visual certainty for that specific observation.
+
+Do not treat confidence as a calibrated probability or as evidence for any derived Human Design conclusion.
+
+Do not output fields for final or derived Human Design concepts, including:
+
+basic_info
+derived_chart_data
+type
+authority
+profile
+definition
+strategy
+not_self_theme
+signature
+active_gates
+active_channels
+defined_centers
+
+The final response must contain exactly one valid JSON object matching the required schema and nothing else.

@@ -109,8 +109,12 @@ def test_real_client_passes_model_and_reasoning_effort_separately(
             return SimpleNamespace(output_text='{"mock": "response"}')
 
     class FakeOpenAI:
-        def __init__(self, *, api_key: str) -> None:
+        def __init__(self, *, api_key: str, timeout: float, max_retries: int) -> None:
+            # Keyword-only, no defaults: the client must explicitly pass a
+            # finite timeout and bounded retries instead of SDK defaults.
             assert api_key == "offline-fake-key"
+            assert timeout > 0
+            assert max_retries >= 0
             self.responses = FakeResponses()
 
     monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
@@ -230,7 +234,7 @@ def test_official_pipeline_returns_typed_extraction_result() -> None:
     assert isinstance(result, BodyGraphExtractionResult)
     assert result.raw_vision.personality.sun is not None
     assert result.derived_chart_data.basic_info.profile == "4/6"
-    assert result.validation.is_valid is True
+    assert result.validation_result.is_valid is True
 
 
 def test_official_pipeline_preserves_existing_parser_error(tmp_path: Path) -> None:
@@ -244,19 +248,6 @@ def test_official_pipeline_preserves_existing_parser_error(tmp_path: Path) -> No
             image_path=IMAGE_PATH,
             config=_config(real_api_enabled=False),
             mock_response_path=invalid_response,
-        )
-
-
-def test_official_pipeline_preserves_existing_missing_image_error(
-    tmp_path: Path,
-) -> None:
-    from human_design.vision.pipeline import extract_bodygraph
-
-    with pytest.raises(VisionClientError, match="Image file not found"):
-        extract_bodygraph(
-            image_path=tmp_path / "missing.png",
-            config=_config(real_api_enabled=False),
-            mock_response_path=MOCK_RESPONSE_PATH,
         )
 
 

@@ -5,32 +5,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from human_design.vision.constants import PLANETARY_FIELDS
 from human_design.vision.evaluation import (
     EvaluationCaseResult,
     EvaluationSummary,
     evaluate_bodygraph_predictions,
 )
+from human_design.vision.models import ValidationCode
 
 
-_PLANETARY_FIELDS = {
-    "sun",
-    "earth",
-    "north_node",
-    "south_node",
-    "moon",
-    "mercury",
-    "venus",
-    "mars",
-    "jupiter",
-    "saturn",
-    "uranus",
-    "neptune",
-    "pluto",
-}
+_PLANETARY_FIELDS = set(PLANETARY_FIELDS)
 _RAW_LABEL_FIELDS = {
     "personality",
     "design",
@@ -54,7 +43,15 @@ _BASIC_INFO_FIELDS = {
     "not_self_theme",
     "signature",
 }
-_WARNING_FIELDS = {"code", "message", "severity", "affects_validity", "source"}
+_WARNING_FIELDS = {
+    "code",
+    "message",
+    "severity",
+    "affects_validity",
+    "source",
+    "field_path",
+}
+_KNOWN_WARNING_CODES = frozenset(code.value for code in ValidationCode)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -62,14 +59,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    golden_cases = _load_golden_cases(args.golden)
-    predictions = _load_predictions(args.predictions)
+    # Input problems (missing file, bad JSON, schema violations) exit with 2,
+    # so callers can distinguish them from a threshold failure (exit 1).
+    try:
+        golden_cases = _load_golden_cases(args.golden)
+        predictions = _load_predictions(args.predictions)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"Invalid evaluation input: {exc}", file=sys.stderr)
+        return 2
+
     thresholds = dict(args.threshold or [])
-    summary = evaluate_bodygraph_predictions(
-        golden_cases=golden_cases,
-        predictions=predictions,
-        thresholds=thresholds,
-    )
+    # evaluate_bodygraph_predictions raises ValueError on bad labels (e.g. an
+    # unknown warning code inside a prediction file), which is still an input
+    # problem: exit 2, same as load-time failures.
+    try:
+        summary = evaluate_bodygraph_predictions(
+            golden_cases=golden_cases,
+            predictions=predictions,
+            thresholds=thresholds,
+        )
+    except ValueError as exc:
+        print(f"Invalid evaluation input: {exc}", file=sys.stderr)
+        return 2
 
     if args.json:
         print(json.dumps(_summary_payload(summary), indent=2, sort_keys=True))
@@ -151,8 +162,7 @@ def _load_golden_cases(path: Path) -> list[Mapping[str, object]]:
     validated_cases: list[Mapping[str, object]] = []
     seen_case_ids: set[str] = set()
     for index, item in enumerate(cases):
-        case = _validate_golden_case(item, index)
-        case_id = case["case_id"]
+        case_id, case = _validate_golden_case(item, index)
         if case_id in seen_case_ids:
             raise ValueError(f"duplicate golden case_id: {case_id}")
         seen_case_ids.add(case_id)
@@ -213,13 +223,20 @@ def _require_exact_keys(
 ) -> None:
     missing = expected - set(value)
     if missing:
-        raise ValueError(f"{label} missing required field: {sorted(missing)[0]}")
+        raise ValueError(
+            f"{label} missing required fields: {', '.join(sorted(missing))}"
+        )
     extra = set(value) - expected
     if extra:
-        raise ValueError(f"{label} has unexpected field: {sorted(extra)[0]}")
+        raise ValueError(
+            f"{label} has unexpected fields: {', '.join(sorted(extra))}"
+        )
 
 
-def _validate_golden_case(value: object, index: int) -> Mapping[str, object]:
+def _validate_golden_case(
+    value: object,
+    index: int,
+) -> tuple[str, Mapping[str, object]]:
     case = _require_mapping(value, f"golden labels cases[{index}]")
     _require_exact_keys(
         case,
@@ -338,17 +355,23 @@ def _validate_golden_case(value: object, index: int) -> Mapping[str, object]:
         raise ValueError(
             f"golden labels cases[{index}].expected_validation_result.warnings must be a list"
         )
+    # A golden warning may be a bare code string ("MISSING_ACTIVATION") or a
+    # full warning object; either way the code must be a known ValidationCode
+    # so a labeling typo fails at load time (exit 2), not mid-evaluation.
     for warning_index, warning_value in enumerate(warnings):
-        warning = _require_mapping(
-            warning_value,
-            f"golden labels cases[{index}].expected_validation_result.warnings[{warning_index}]",
+        label = (
+            f"golden labels cases[{index}].expected_validation_result"
+            f".warnings[{warning_index}]"
         )
-        _require_exact_keys(
-            warning,
-            _WARNING_FIELDS,
-            f"golden labels cases[{index}].expected_validation_result.warnings[{warning_index}]",
-        )
-    return case
+        if isinstance(warning_value, str):
+            code = warning_value
+        else:
+            warning = _require_mapping(warning_value, label)
+            _require_exact_keys(warning, _WARNING_FIELDS, label)
+            code = warning.get("code")
+        if not isinstance(code, str) or code not in _KNOWN_WARNING_CODES:
+            raise ValueError(f"{label} has unknown warning code: {code!r}")
+    return case_id, case
 
 
 def _print_human_summary(summary: EvaluationSummary) -> None:

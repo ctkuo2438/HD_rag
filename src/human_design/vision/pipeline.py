@@ -33,7 +33,7 @@ def extract_bodygraph(
     return BodyGraphExtractionResult(
         raw_vision=parse_result.raw_vision,
         derived_chart_data=interpretation_result.derived_chart_data,
-        validation=validation_result,
+        validation_result=validation_result,
     )
 
 
