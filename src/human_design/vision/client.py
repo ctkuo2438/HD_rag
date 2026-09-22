@@ -165,7 +165,9 @@ def extract_bodygraph_raw_json_with_real_api(
             store=False,
         )
     except Exception as exc:
-        raise VisionClientError(f"Vision API request failed: {type(exc).__name__}: {exc}") from exc
+        raise VisionClientError(
+            "Vision API request failed. Check your API configuration and try again."
+        ) from exc
 
     # extract the output text from the response
     output_text = response.output_text

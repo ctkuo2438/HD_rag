@@ -222,6 +222,99 @@ def test_client_rejects_missing_image_in_mock_mode(tmp_path: Path) -> None:
         )
 
 
+def _mock_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> RuntimeError:
+    provider_error = RuntimeError(
+        f"private provider response; credential={FAKE_API_KEY}; "
+        f"request_payload=data:image/png;base64,{FAKE_BASE64}"
+    )
+
+    class FakeResponses:
+        def create(self, **kwargs: object) -> None:
+            raise provider_error
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            if failure_stage == "initialization":
+                raise provider_error
+            self.responses = FakeResponses()
+
+    monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+    return provider_error
+
+
+@pytest.mark.parametrize("failure_stage", ["initialization", "request"])
+def test_real_client_sanitizes_provider_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    provider_error = _mock_provider_failure(monkeypatch, failure_stage)
+
+    with pytest.raises(VisionClientError) as exc_info:
+        extract_bodygraph_raw_json(
+            image_path=IMAGE_PATH,
+            config=_config(real_api_enabled=True, api_key=FAKE_API_KEY),
+        )
+
+    assert exc_info.value.__cause__ is provider_error
+    assert str(exc_info.value) == (
+        "Vision API request failed. Check your API configuration and try again."
+    )
+
+
+@pytest.mark.parametrize("failure_stage", ["initialization", "request"])
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_cli_sanitizes_provider_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure_stage: str,
+    json_mode: bool,
+) -> None:
+    _mock_provider_failure(monkeypatch, failure_stage)
+    module = _load_cli_module()
+    config = _config(real_api_enabled=True, api_key=FAKE_API_KEY)
+    monkeypatch.setattr(module, "load_vision_config", lambda: config)
+
+    status = module.main([str(IMAGE_PATH)] + (["--json"] if json_mode else []))
+    captured = capsys.readouterr()
+
+    assert status == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "BodyGraph extraction failed: Vision API request failed. "
+        "Check your API configuration and try again.\n"
+    )
+
+
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_cli_does_not_print_unexpected_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    json_mode: bool,
+) -> None:
+    module = _load_cli_module()
+    monkeypatch.setattr(
+        module, "load_vision_config", lambda: _config(real_api_enabled=False)
+    )
+
+    def fail_extraction(**kwargs: object) -> None:
+        try:
+            raise RuntimeError(f"private provider response: {FAKE_API_KEY}")
+        except RuntimeError as exc:
+            raise RuntimeError(f"private request payload: {FAKE_BASE64}") from exc
+
+    monkeypatch.setattr(module, "extract_bodygraph", fail_extraction)
+
+    status = module.main([str(IMAGE_PATH)] + (["--json"] if json_mode else []))
+    captured = capsys.readouterr()
+
+    assert status == 1
+    assert captured.out == ""
+    assert captured.err == "BodyGraph extraction failed unexpectedly.\n"
+
+
 def test_official_pipeline_returns_typed_extraction_result() -> None:
     from human_design.vision.pipeline import extract_bodygraph
 

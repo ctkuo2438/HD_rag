@@ -296,6 +296,14 @@ class ValidationWarning:
         if not isinstance(self.field_path, str) or not self.field_path.strip():
             raise ValueError("field_path must be a non-empty string")
 
+        severity, affects_validity = warning_defaults(self.code)
+        if self.severity is not severity:
+            raise ValueError(f"severity must match canonical severity for {self.code}")
+        if self.affects_validity is not affects_validity:
+            raise ValueError(
+                f"affects_validity must match canonical value for {self.code}"
+            )
+
 
 @dataclass(frozen=True)
 class ValidationResult:

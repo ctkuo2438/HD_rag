@@ -8,6 +8,9 @@ Inputs are plain JSON-shaped dicts:
 
     {
       "case_id": "test1",
+      "evaluation_scope": {
+        "include_raw_visual_metrics": true, "include_derived_metrics": true
+      },
       "expected_raw_labels": {...same shape as raw Vision JSON...},
       "expected_derived_labels": {"basic_info": {...}, "active_gates": [...], ...},
       "expected_validation_result": {"is_valid": true, "warnings": []}
@@ -15,18 +18,25 @@ Inputs are plain JSON-shaped dicts:
 
 Scoring conventions:
 
-- You label it, we score it. Any golden field that is absent is simply not
-  scored; there are no separate scope flags. An activation labeled JSON null
-  means "unreadable in the image" and is scored via the null-respect metric.
+- Explicit boolean scope flags control all raw extraction metrics and all
+  derived-chart metrics independently. Disabled metrics are omitted.
+- Derived evaluation requires all 26 valid, non-null source activations,
+  even when raw metrics are disabled. Raw-only labels may use JSON null for
+  unreadable activations, scored via the existing null-respect metric.
+- Validity and warning-code metrics are independent of these scope flags.
+- Missing predictions remain failures in applicable metric denominators.
+  Only explicit null activations and explicit empty collections can earn
+  null-match or empty-set credit. Malformed supplied fields raise ValueError
+  even when their metric family is disabled.
 - Gates are compared as ints ("34" == 34) and channels in canonical
   direction ("60-3" == "3-60"), so label formatting cannot silently zero
   a score.
 - Warning comparison is by code set only. Golden warnings may be written as
   bare code strings ("MISSING_ACTIVATION") or as objects with a "code"
-  field; unknown codes or other shapes raise ValueError instead of silently
-  scoring zero. Severity / affects_validity are a deterministic function of
-  the code (models.warning_defaults), so matching codes implies matching
-  metadata.
+  field; unknown codes, other shapes, or noncanonical metadata raise
+  ValueError instead of silently scoring zero. Severity / affects_validity
+  are a deterministic function of the code (models.warning_defaults), so
+  matching codes implies matching metadata.
 """
 
 from __future__ import annotations
@@ -34,8 +44,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from human_design.vision.constants import ALL_CHANNELS, PLANETARY_FIELDS
-from human_design.vision.models import ValidationCode
+from human_design.vision.constants import ALL_CHANNELS, CANONICAL_CENTERS, PLANETARY_FIELDS
+from human_design.vision.models import ValidationCode, warning_defaults
 
 BASIC_INFO_FIELDS: tuple[str, ...] = (
     "profile",
@@ -77,6 +87,107 @@ class EvaluationSummary:
 # ---------------------------------------------------------------------------
 
 
+def validate_evaluation_scope(golden: Mapping[str, object]) -> tuple[bool, bool]:
+    """Validate golden scope/eligibility and return the raw and derived flags.
+
+    Shared by the file loader and evaluator. Source completeness and ranges
+    are checked here; manual verification remains the label author's duty.
+    """
+    scope = _require_label_fields(
+        golden.get("evaluation_scope"),
+        {"include_raw_visual_metrics", "include_derived_metrics"},
+        "evaluation_scope",
+    )
+    for flag in ("include_raw_visual_metrics", "include_derived_metrics"):
+        if type(scope[flag]) is not bool:
+            raise ValueError(f"evaluation_scope.{flag} must be a bool")
+    include_raw = scope["include_raw_visual_metrics"] is True
+    include_derived = scope["include_derived_metrics"] is True
+
+    raw_collections = tuple(field for _, field, _ in _VISUAL_SET_SPECS) + ("uncertain_items",)
+    raw = _require_label_fields(
+        golden.get("expected_raw_labels"),
+        {"personality", "design", *raw_collections},
+        "expected_raw_labels",
+    )
+    for column_name in ("personality", "design"):
+        column = _require_label_fields(
+            raw[column_name], PLANETARY_FIELDS, f"expected_raw_labels.{column_name}",
+        )
+        if include_derived:
+            for field_name, value in column.items():
+                activation = _activation(value)
+                if activation is None or not (
+                    1 <= activation[0] <= 64 and 1 <= activation[1] <= 6
+                ):
+                    raise ValueError(
+                        f"expected_raw_labels.{column_name}.{field_name} must be a valid "
+                        "non-null activation when include_derived_metrics is true"
+                    )
+    for field in raw_collections:
+        if not isinstance(raw[field], list):
+            raise ValueError(f"expected_raw_labels.{field} must be a list")
+
+    if "expected_derived_labels" not in golden:
+        raise ValueError("expected_derived_labels is required")
+    derived = golden["expected_derived_labels"]
+    if include_derived:
+        if not isinstance(derived, Mapping):
+            raise ValueError(
+                "expected_derived_labels must be an object when include_derived_metrics is true"
+            )
+        derived_collections = tuple(field for _, field, _ in _DERIVED_SET_SPECS)
+        _require_label_fields(
+            derived, {"basic_info", *derived_collections}, "expected_derived_labels",
+        )
+        _require_label_fields(
+            derived["basic_info"], BASIC_INFO_FIELDS, "expected_derived_labels.basic_info",
+        )
+        for field in derived_collections:
+            if not isinstance(derived[field], list):
+                raise ValueError(f"expected_derived_labels.{field} must be a list")
+    elif derived is not None:
+        raise ValueError(
+            "expected_derived_labels must be null when include_derived_metrics is false"
+        )
+    return include_raw, include_derived
+
+
+def validate_prediction(prediction: Mapping[str, object]) -> None:
+    """Check supplied prediction fields without filling omissions or applying scope."""
+    if not isinstance(prediction, Mapping):
+        raise ValueError("prediction must be an object")
+    raw = _prediction_mapping(prediction, "raw_vision", "prediction")
+    for column_name in ("personality", "design"):
+        column = _prediction_mapping(raw, column_name, "raw_vision")
+        for field_name in PLANETARY_FIELDS:
+            if field_name not in column or column[field_name] is None:
+                continue
+            activation = _activation(column[field_name])
+            if activation is None or not (1 <= activation[0] <= 64 and 1 <= activation[1] <= 6):
+                raise ValueError(
+                    f"raw_vision.{column_name}.{field_name} must be null or a valid "
+                    "Gate.Line string or gate/line object (gate 1-64, line 1-6)"
+                )
+    _validate_prediction_sets(raw, _VISUAL_SET_SPECS, "raw_vision")
+
+    derived = _prediction_mapping(prediction, "derived_chart_data", "prediction")
+    _validate_prediction_sets(derived, _DERIVED_SET_SPECS, "derived_chart_data")
+    basic_info = _prediction_mapping(derived, "basic_info", "derived_chart_data")
+    for field_name in BASIC_INFO_FIELDS:
+        if field_name in basic_info and not isinstance(basic_info[field_name], str):
+            raise ValueError(f"derived_chart_data.basic_info.{field_name} must be a string")
+
+    validation = _prediction_mapping(prediction, "validation_result", "prediction")
+    if "is_valid" in validation and type(validation["is_valid"]) is not bool:
+        raise ValueError("validation_result.is_valid must be a bool")
+    if "warnings" in validation:
+        warnings = validation["warnings"]
+        if not isinstance(warnings, (list, tuple)):
+            raise ValueError("validation_result.warnings must be a list or tuple")
+        warning_codes(warnings)
+
+
 def evaluate_bodygraph_prediction(
     *,
     case_id: str,
@@ -84,17 +195,20 @@ def evaluate_bodygraph_prediction(
     prediction: Mapping[str, object],
 ) -> EvaluationCaseResult:
     """Compare one saved prediction against one golden label mapping."""
+    validate_prediction(prediction)
+    include_raw, include_derived = validate_evaluation_scope(golden)
     metrics: dict[str, float] = {}
     case_warnings: list[str] = []
 
-    expected_raw = _mapping(golden.get("expected_raw_labels"))
-    predicted_raw = _mapping(prediction.get("raw_vision"))
-    metrics.update(_activation_metrics(expected_raw, predicted_raw))
-    metrics.update(_labeled_set_metrics(expected_raw, predicted_raw, _VISUAL_SET_SPECS))
+    if include_raw:
+        expected_raw = _mapping(golden.get("expected_raw_labels"))
+        predicted_raw = _prediction_mapping(prediction, "raw_vision", "prediction")
+        metrics.update(_activation_metrics(expected_raw, predicted_raw))
+        metrics.update(_labeled_set_metrics(expected_raw, predicted_raw, _VISUAL_SET_SPECS))
 
-    expected_derived = _mapping(golden.get("expected_derived_labels"))
-    if expected_derived:
-        predicted_derived = _mapping(prediction.get("derived_chart_data"))
+    if include_derived:
+        expected_derived = _mapping(golden.get("expected_derived_labels"))
+        predicted_derived = _prediction_mapping(prediction, "derived_chart_data", "prediction")
         if not predicted_derived:
             case_warnings.append("Prediction is missing derived_chart_data.")
         metrics.update(
@@ -103,20 +217,27 @@ def evaluate_bodygraph_prediction(
         metrics.update(_basic_info_metrics(expected_derived, predicted_derived))
 
     expected_validation = _mapping(golden.get("expected_validation_result"))
-    predicted_validation = _mapping(prediction.get("validation_result"))
+    predicted_validation = _prediction_mapping(prediction, "validation_result", "prediction")
     if isinstance(expected_validation.get("is_valid"), bool):
         metrics["validation_is_valid_exact_match"] = (
             1.0
-            if predicted_validation.get("is_valid") is expected_validation["is_valid"]
+            if "is_valid" in predicted_validation
+            and predicted_validation["is_valid"] is expected_validation["is_valid"]
             else 0.0
         )
     if "warnings" in expected_validation:
-        metrics.update(
-            warning_code_metrics(
-                _tuple(expected_validation.get("warnings")),
-                _tuple(predicted_validation.get("warnings")),
+        warning_codes(_tuple(expected_validation["warnings"]))
+        if "warnings" not in predicted_validation:
+            metrics.update(dict.fromkeys(
+                ("warning_code_precision", "warning_code_recall", "warning_code_f1"), 0.0,
+            ))
+        else:
+            metrics.update(
+                warning_code_metrics(
+                    _tuple(expected_validation["warnings"]),
+                    predicted_validation["warnings"],
+                )
             )
-        )
 
     return EvaluationCaseResult(
         case_id=case_id,
@@ -132,13 +253,17 @@ def evaluate_bodygraph_predictions(
     thresholds: Mapping[str, float] | None = None,
 ) -> EvaluationSummary:
     """Evaluate saved predictions and macro-average metrics across cases."""
+    if not isinstance(predictions, Mapping):
+        raise ValueError("predictions must be a case-id mapping")
+    for prediction in predictions.values():
+        validate_prediction(prediction)
     per_case: list[EvaluationCaseResult] = []
     for golden in golden_cases:
         case_id = _case_id(golden)
         case_result = evaluate_bodygraph_prediction(
             case_id=case_id,
             golden=golden,
-            prediction=_mapping(predictions.get(case_id)),
+            prediction=predictions[case_id] if case_id in predictions else {},
         )
         if case_id not in predictions:
             case_result = EvaluationCaseResult(
@@ -203,7 +328,7 @@ def _activation_metrics(
         expected_column = _mapping(expected_raw.get(column_name))
         if not expected_column:
             continue
-        predicted_column = _mapping(predicted_raw.get(column_name))
+        predicted_column = _prediction_mapping(predicted_raw, column_name, "raw_vision")
         matches, eligible, respected, nulls = _activation_counts(
             expected_column, predicted_column
         )
@@ -235,12 +360,12 @@ def _activation_counts(
             continue  # unlabeled: not scored
         if expected_column[field_name] is None:
             nulls += 1
-            if predicted_column.get(field_name) is None:
+            if field_name in predicted_column and predicted_column[field_name] is None:
                 respected += 1
             continue
         eligible += 1
-        if activation_exact_match(
-            expected_column[field_name], predicted_column.get(field_name)
+        if field_name in predicted_column and activation_exact_match(
+            expected_column[field_name], predicted_column[field_name]
         ):
             matches += 1
     return matches, eligible, respected, nulls
@@ -320,6 +445,32 @@ _DERIVED_SET_SPECS = (
 )
 
 
+def _validate_prediction_sets(source: Mapping[str, object], specs: tuple, label: str) -> None:
+    for _, field_name, normalize in specs:
+        if field_name not in source:
+            continue
+        values = source[field_name]
+        if not isinstance(values, (list, tuple, set, frozenset)):
+            raise ValueError(f"{label}.{field_name} must be a collection")
+        for index, value in enumerate(values):
+            normalized = normalize(value)
+            if normalize is _normalize_gate:
+                valid = (
+                    isinstance(normalized, int)
+                    and not isinstance(normalized, bool)
+                    and 1 <= normalized <= 64
+                )
+                requirement = "an integer gate from 1-64 or its numeric string"
+            elif normalize is _normalize_channel:
+                valid = isinstance(normalized, str) and normalized in ALL_CHANNELS
+                requirement = "a canonical channel or its reversed form"
+            else:
+                valid = isinstance(normalized, str) and normalized in CANONICAL_CENTERS
+                requirement = "a canonical center string"
+            if not valid:
+                raise ValueError(f"{label}.{field_name}[{index}] must be {requirement}")
+
+
 def _labeled_set_metrics(
     expected: Mapping[str, object],
     predicted: Mapping[str, object],
@@ -330,11 +481,13 @@ def _labeled_set_metrics(
         expected_values = _collection(expected, field_name)
         if expected_values is None:
             continue  # unlabeled: not scored
-        predicted_values = _collection(predicted, field_name) or ()
-        precision, recall, f1 = precision_recall_f1(
-            (normalize(value) for value in expected_values),
-            (normalize(value) for value in predicted_values),
-        )
+        if field_name not in predicted:
+            precision, recall, f1 = 0.0, 0.0, 0.0
+        else:
+            precision, recall, f1 = precision_recall_f1(
+                (normalize(value) for value in expected_values),
+                (normalize(value) for value in predicted[field_name]),
+            )
         metrics[f"{prefix}_precision"] = precision
         metrics[f"{prefix}_recall"] = recall
         metrics[f"{prefix}_f1"] = f1
@@ -353,7 +506,7 @@ def _basic_info_metrics(
     expected_info = _mapping(expected_derived.get("basic_info"))
     if not expected_info:
         return {}
-    predicted_info = _mapping(predicted_derived.get("basic_info"))
+    predicted_info = _prediction_mapping(predicted_derived, "basic_info", "derived_chart_data")
 
     metrics: dict[str, float] = {}
     scores: list[float] = []
@@ -361,7 +514,7 @@ def _basic_info_metrics(
         expected_value = expected_info.get(field_name)
         if expected_value is None:
             continue  # unlabeled: not scored
-        score = 1.0 if predicted_info.get(field_name) == expected_value else 0.0
+        score = float(field_name in predicted_info and predicted_info[field_name] == expected_value)
         metrics[f"{field_name}_exact_match"] = score
         scores.append(score)
 
@@ -378,11 +531,11 @@ def warning_code_metrics(
 
     Raises ValueError for entries that are neither a code string nor a
     mapping with a string "code" field, or whose code is not a known
-    ValidationCode, so bad labels fail loudly instead of scoring zero.
+    ValidationCode, or whose metadata contradicts the canonical contract.
     """
     precision, recall, f1 = precision_recall_f1(
-        _warning_codes(expected_warnings),
-        _warning_codes(predicted_warnings),
+        warning_codes(expected_warnings),
+        warning_codes(predicted_warnings),
     )
     return {
         "warning_code_precision": precision,
@@ -391,8 +544,12 @@ def warning_code_metrics(
     }
 
 
-def _warning_codes(warnings: Iterable[object]) -> set[str]:
-    """Coerce warning entries to a code set, failing loudly on bad labels."""
+def warning_codes(warnings: Iterable[object]) -> set[str]:
+    """Return known warning codes, rejecting supplied noncanonical metadata.
+
+    Bare codes and omitted metadata use the canonical warning defaults.
+    This check is shared by file loaders and warning-code metrics.
+    """
     codes: set[str] = set()
     for index, warning in enumerate(warnings):
         code = _warning_code(warning)
@@ -403,8 +560,18 @@ def _warning_codes(warnings: Iterable[object]) -> set[str]:
             )
         if code not in _KNOWN_WARNING_CODES:
             raise ValueError(
-                f"warnings[{index}] has unknown warning code: {code!r}"
+                f"warnings[{index}] has unknown warning code"
             )
+        if isinstance(warning, Mapping):
+            severity, affects_validity = warning_defaults(ValidationCode(code))
+            if warning.get("severity", severity) != severity:
+                raise ValueError(
+                    f"warnings[{index}].severity must match canonical severity for {code}"
+                )
+            if warning.get("affects_validity", affects_validity) is not affects_validity:
+                raise ValueError(
+                    f"warnings[{index}].affects_validity must match canonical value for {code}"
+                )
         codes.add(code)
     return codes
 
@@ -462,6 +629,28 @@ def _mapping(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _prediction_mapping(
+    source: Mapping[str, object], field_name: str, label: str,
+) -> Mapping[str, object]:
+    if field_name not in source:
+        return {}  # No descendant fields were supplied; never synthesize their values.
+    value = source[field_name]
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label}.{field_name} must be an object")
+    return value
+
+
+def _require_label_fields(
+    value: object, fields: Iterable[str], label: str,
+) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    expected = set(fields)
+    if set(value) != expected:
+        raise ValueError(f"{label} must contain exactly: {', '.join(sorted(expected))}")
+    return value
+
+
 def _tuple(value: object) -> tuple[object, ...]:
     return tuple(value) if isinstance(value, (list, tuple)) else ()
 
@@ -481,10 +670,13 @@ __all__ = [
     "EvaluationSummary",
     "evaluate_bodygraph_prediction",
     "evaluate_bodygraph_predictions",
+    "validate_evaluation_scope",
+    "validate_prediction",
     "check_thresholds",
     "activation_exact_match",
     "activation_match_rate",
     "precision_recall_f1",
     "macro_average",
     "warning_code_metrics",
+    "warning_codes",
 ]

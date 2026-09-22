@@ -140,11 +140,10 @@ def _derived_chart_data() -> DerivedChartData:
 def _warning(
     *,
     code: ValidationCode = ValidationCode.MISSING_ACTIVATION,
-    severity: ValidationSeverity = ValidationSeverity.WARNING,
-    affects_validity: bool = False,
     source: ValidationSource = ValidationSource.validation,
     field_path: str = "test.field",
 ) -> ValidationWarning:
+    severity, affects_validity = warning_defaults(code)
     return ValidationWarning(
         code=code,
         message=f"{code.value} test warning",
@@ -423,11 +422,57 @@ def test_every_validation_code_has_registered_warning_defaults() -> None:
         assert isinstance(affects_validity, bool)
 
 
+@pytest.mark.parametrize("code", list(ValidationCode))
+@pytest.mark.parametrize("conflicting_field", ["severity", "affects_validity", "both"])
+def test_validation_warning_rejects_noncanonical_metadata(
+    code: ValidationCode, conflicting_field: str,
+) -> None:
+    severity, affects_validity = warning_defaults(code)
+    if conflicting_field in {"severity", "both"}:
+        severity = (
+            ValidationSeverity.ERROR
+            if severity is ValidationSeverity.INFO
+            else ValidationSeverity.INFO
+        )
+    if conflicting_field in {"affects_validity", "both"}:
+        affects_validity = not affects_validity
+
+    with pytest.raises(ValueError, match="canonical"):
+        ValidationWarning(
+            code=code,
+            message="Synthetic warning.",
+            severity=severity,
+            affects_validity=affects_validity,
+            source=ValidationSource.validation,
+            field_path="test.field",
+        )
+
+
+@pytest.mark.parametrize("code", list(ValidationCode))
+def test_validation_warning_accepts_canonical_metadata_as_strings(
+    code: ValidationCode,
+) -> None:
+    severity, affects_validity = warning_defaults(code)
+    warning = ValidationWarning(
+        code=code.value,
+        message="Synthetic warning.",
+        severity=severity.value,
+        affects_validity=affects_validity,
+        source="validation",
+        field_path="test.field",
+    )
+
+    assert warning.code is code
+    assert warning.severity is severity
+    assert warning.affects_validity is affects_validity
+    assert ValidationResult(warnings=(warning,)).is_valid is not affects_validity
+
+
 def test_validation_warning_exposes_stable_assertion_fields() -> None:
     warning = ValidationWarning(
         code=ValidationCode.MISSING_ACTIVATION,
         message="Missing Personality Moon activation.",
-        severity=ValidationSeverity.WARNING,
+        severity=ValidationSeverity.ERROR,
         affects_validity=True,
         source=ValidationSource.validation,
         field_path="personality.moon",
@@ -435,7 +480,7 @@ def test_validation_warning_exposes_stable_assertion_fields() -> None:
 
     assert warning.code is ValidationCode.MISSING_ACTIVATION
     assert warning.message == "Missing Personality Moon activation."
-    assert warning.severity is ValidationSeverity.WARNING
+    assert warning.severity is ValidationSeverity.ERROR
     assert warning.affects_validity is True
     assert warning.source is ValidationSource.validation
     assert warning.field_path == "personality.moon"
@@ -457,8 +502,8 @@ def test_validation_warning_requires_nonempty_field_path(bad_field_path: str) ->
 def test_validation_result_is_valid_when_no_warning_affects_validity() -> None:
     validation = ValidationResult(
         warnings=(
-            _warning(severity=ValidationSeverity.INFO),
-            _warning(severity=ValidationSeverity.WARNING),
+            _warning(code=ValidationCode.VISIBLE_CHANNEL_NORMALIZED),
+            _warning(code=ValidationCode.INVALID_VISIBLE_CHANNEL),
         )
     )
 
@@ -468,8 +513,8 @@ def test_validation_result_is_valid_when_no_warning_affects_validity() -> None:
 def test_validation_result_is_invalid_when_any_warning_affects_validity() -> None:
     validation = ValidationResult(
         warnings=(
-            _warning(severity=ValidationSeverity.INFO),
-            _warning(affects_validity=True),
+            _warning(code=ValidationCode.VISIBLE_CHANNEL_NORMALIZED),
+            _warning(),
         )
     )
 
@@ -525,7 +570,7 @@ def test_missing_activation_scenarios_are_representable(
             )
         )
     validation = ValidationResult(
-        warnings=(_warning(code=code, affects_validity=True),)
+        warnings=(_warning(code=code),)
     )
 
     codes = tuple(warning.code for warning in validation.warnings)

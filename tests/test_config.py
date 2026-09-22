@@ -52,6 +52,16 @@ def test_load_config_reads_openai_api_key_from_explicit_env() -> None:
     assert config.openai_api_key == "env-api-key"
 
 
+def test_config_repr_redacts_api_key() -> None:
+    api_key = "fake-api-key-that-must-never-be-printed"
+    config = load_config(env={"OPENAI_API_KEY": api_key})
+
+    assert config.openai_api_key == api_key
+    assert api_key not in repr(config)
+    assert "openai_api_key" not in repr(config)
+    assert "text-embedding-3-small" in repr(config)
+
+
 def test_chunk_environment_overrides() -> None:
     config = load_config(
         env={

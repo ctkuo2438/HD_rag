@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
@@ -45,7 +45,7 @@ class AppConfig:
     chroma_dir: Path
     collection_name: str
     embedding_model: str
-    openai_api_key: str | None
+    openai_api_key: str | None = field(repr=False)
     chunk_size: int
     chunk_overlap: int
     ingestion_version: str

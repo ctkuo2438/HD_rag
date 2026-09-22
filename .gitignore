@@ -20,6 +20,10 @@ data/bodygraph_samples/images/
 data/bodygraph_samples/private/
 data/bodygraph_samples/generated_responses/
 data/bodygraph_samples/vision_responses/
+*.vision_response.json
+*.bodygraph_prediction.json
+*.base64
+*.image_payload.json
 
 # Python/test cache
 .pytest_cache/

@@ -23,12 +23,7 @@ Install the project dependencies with uv:
 uv sync
 ```
 
-Run the default verification commands:
-
-```sh
-uv run pytest
-uv run ruff check .
-```
+Run the [offline verification commands](#default-verification).
 
 ## Environment
 
@@ -73,15 +68,15 @@ Default tests are designed to be free and deterministic:
 - They do not require `OPENAI_API_KEY`.
 - They do not require real PDFs in `data/pdfs/`.
 - They do not require an existing real Chroma collection.
-- They should not create repo-level `storage/chroma`.
+- They use temporary test storage and leave any existing local Chroma store intact.
 
-Use this verification flow when checking the offline test path:
+Use this verification flow when checking the offline test path. It explicitly disables real embedding and Vision API modes, including opt-ins configured in the environment or `.env`. Keep any existing `storage/chroma` directory; verification does not require deleting, resetting, or removing it.
 
 ```sh
-rm -rf storage/chroma
-env -u OPENAI_API_KEY uv run pytest
+env -u OPENAI_API_KEY HD_RAG_REAL_EMBEDDINGS=0 HD_VISION_REAL_API=0 \
+  uv run pytest
 uv run ruff check .
-test ! -d storage/chroma
+git diff --check
 ```
 
 ## Manual Ingestion
@@ -93,6 +88,8 @@ HD_RAG_REAL_EMBEDDINGS=1 uv run python scripts/ingest_pdfs.py
 ```
 
 This command may call OpenAI and create embedding cost. It requires local PDFs and `OPENAI_API_KEY`, and it writes vectors into the configured local Chroma directory.
+
+In this version, Phase 1 ingestion does not append to populated collections. It refuses before loading PDFs or constructing an embedding client to avoid duplicate content and repeated embedding cost. For an intentional rebuild, select a fresh/empty collection with `HD_RAG_COLLECTION`. Existing storage is not deleted or reset.
 
 Do not run real ingestion as part of default tests or routine offline verification.
 
@@ -242,7 +239,11 @@ dst.write_text(
 PY
 ```
 
-Golden-label files use `phase2_golden_labels_v2` and contain the exact top-level fields `schema_version`, `documentation`, `recommended_sample_coverage`, and `cases`. Prediction files use `phase2_predictions_v1` and contain only `schema_version` and `predictions`; each prediction has `case_id`, `raw_vision`, `derived_chart_data`, and `validation_result`. The evaluator intentionally rejects older aliases and unwrapped prediction forms.
+Golden-label files use `phase2_golden_labels_v2` and contain the exact top-level fields `schema_version`, `documentation`, `recommended_sample_coverage`, and `cases`. Prediction files use `phase2_predictions_v1` and contain only `schema_version` and `predictions`; each prediction requires `case_id` and may supply `raw_vision`, `derived_chart_data`, and `validation_result`. The evaluator intentionally rejects older aliases, unsupported entry fields, duplicate case IDs, and unwrapped prediction forms.
+
+Missing prediction cases, output sections, or fields count as failures for applicable labeled metrics and remain in their denominators. Disabled metric families remain absent. Only an explicitly predicted `null` activation can match an expected null; a missing activation cannot. Explicit empty arrays use the normal set metrics (empty versus empty is perfect), while missing collections receive zero precision, recall, and F1. Null collections are invalid.
+
+Malformed supplied prediction fields are evaluation-input errors, even when their metric family is disabled. Parent sections and activation columns must be objects when supplied. Activations accept null, Gate.Line strings, or integer gate/line objects (gate 1–64, line 1–6). Gate collections accept integers or numeric strings from 1–64; booleans and floating-point gates are rejected. Centers must be canonical strings; channels accept canonical or reversed valid forms. Basic-info values must be strings, `is_valid` must be a real boolean, and warning arrays retain the canonical warning-code metadata contract. Missing warnings score as failures; explicit empty warning arrays retain normal empty-set scoring. Valid prediction representations and scoring formulas are otherwise unchanged.
 
 Run evaluation:
 
@@ -258,7 +259,4 @@ Evaluation reports activation exact-match rates, set precision/recall/F1 for gat
 
 Default tests are offline, deterministic, and independent of private images, OpenAI services, and Phase 1 Chroma storage.
 
-```sh
-uv run pytest
-uv run ruff check .
-```
+Use the [offline verification commands](#default-verification), which explicitly disable real provider modes and preserve existing local storage.

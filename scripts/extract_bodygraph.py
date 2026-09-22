@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import traceback
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
@@ -56,8 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"BodyGraph extraction failed: {exc}", file=sys.stderr)
         return 1
     except Exception:
-        # Unexpected errors are bugs: keep the full traceback for debugging.
-        traceback.print_exc()
+        # Exception chains can contain private provider request/response data.
         print("BodyGraph extraction failed unexpectedly.", file=sys.stderr)
         return 1
 

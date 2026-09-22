@@ -32,6 +32,19 @@ def get_or_create_chroma_collection(
     return client.get_or_create_collection(name=collection_name)
 
 
+def chroma_collection_is_populated(chroma_dir: Path, collection_name: str) -> bool:
+    """Inspect a target without creating a collection or changing its contents."""
+    if not chroma_dir.exists():
+        return False
+
+    client = create_chroma_client(chroma_dir)
+    try:
+        collection = client.get_collection(name=collection_name)
+    except NotFoundError:
+        return False
+    return collection.count() > 0
+
+
 def create_chroma_vector_store(
     chroma_dir: Path = DEFAULT_CHROMA_DIR,
     collection_name: str = DEFAULT_COLLECTION_NAME,

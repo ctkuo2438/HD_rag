@@ -15,7 +15,10 @@ from human_design.rag.ingestion import (
     build_text_extraction_report,
     load_pdfs,
 )
-from human_design.rag.vector_store import create_chroma_vector_store
+from human_design.rag.vector_store import (
+    chroma_collection_is_populated,
+    create_chroma_vector_store,
+)
 
 
 REAL_EMBEDDINGS_ENV_VAR = "HD_RAG_REAL_EMBEDDINGS"
@@ -27,6 +30,7 @@ DISABLED_MESSAGE = (
 # pipeline
 '''
 load_config()
+→ chroma_collection_is_populated()
 → load_pdfs()
 → build_text_extraction_report()
 → chunk_documents()
@@ -47,7 +51,13 @@ def main() -> None:
         config = load_config()
         if config.openai_api_key is None:
             raise SystemExit("OPENAI_API_KEY is not set. Please set it in your environment or .env file.")
-        
+        if chroma_collection_is_populated(config.chroma_dir, config.collection_name):
+            raise SystemExit(
+                "Phase 1 ingestion refuses to append to a populated collection "
+                "to avoid duplicate content. "
+                "Use a fresh/empty collection for an intentional rebuild."
+            )
+
         documents = load_pdfs(config.pdf_dir) # step 1 from ingestion.py
         extraction_report = build_text_extraction_report(
             config.pdf_dir,
