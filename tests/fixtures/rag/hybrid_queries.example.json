@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"case_id": "generator-en", "original_query": "What is a Generator?", "dense_query": "Explain the Generator type in Human Design.", "sparse_query": "Generator Type", "expected_entities": ["Generator"]},
+    {"case_id": "sacral-en", "original_query": "What is Sacral Authority?", "dense_query": "How is Sacral Authority described for decisions?", "sparse_query": "Sacral Authority", "expected_entities": ["Sacral Authority"]},
+    {"case_id": "gate42-en", "original_query": "What does Gate 42 mean?", "dense_query": "Explain Gate 42 and completion of cycles.", "sparse_query": "Gate 42 Hexagram 42", "expected_entities": ["Gate 42"]},
+    {"case_id": "channel-en", "original_query": "What does Channel 42-53 mean?", "dense_query": "Explain the Human Design Channel connecting Gates 42 and 53.", "sparse_query": "Channel 42-53 Channel 53-42", "expected_entities": ["Channel 42-53"]},
+    {"case_id": "profile-en", "original_query": "What is Profile 4/6?", "dense_query": "Explain the themes of the 4/6 Profile.", "sparse_query": "Profile 4/6 Profile 4 6", "expected_entities": ["Profile 4/6"]},
+    {"case_id": "split-en", "original_query": "What is Split Definition?", "dense_query": "Explain Split Definition and separate connected groups of centers.", "sparse_query": "Split Definition", "expected_entities": ["Split Definition"]},
+    {"case_id": "solar-en", "original_query": "What is the Solar Plexus Center?", "dense_query": "Explain the role of the Solar Plexus Center.", "sparse_query": "Solar Plexus Center", "expected_entities": ["Solar Plexus"]},
+    {"case_id": "emotional-zh", "original_query": "什麼是情緒權威？", "dense_query": "解釋人類圖的情緒權威及做決定的方式。", "sparse_query": "情緒權威 Emotional Authority Solar Plexus Authority", "expected_entities": ["Emotional Authority", "Solar Plexus Authority"]},
+    {"case_id": "gate42-zh", "original_query": "42號閘門代表什麼？", "dense_query": "解釋人類圖42號閘門與完成週期的意義。", "sparse_query": "42號閘門 Gate 42 Hexagram 42", "expected_entities": ["Gate 42"]},
+    {"case_id": "profile-zh", "original_query": "4/6人生角色是什麼？", "dense_query": "解釋人類圖4/6人生角色的主題。", "sparse_query": "4/6人生角色 Profile 4/6 Profile 4 6", "expected_entities": ["Profile 4/6"]},
+    {"case_id": "g-zh", "original_query": "G中心與自我認同有什麼關係？", "dense_query": "解釋G中心與自我認同及方向的關係。", "sparse_query": "G中心 自我中心 G", "expected_entities": ["G"]},
+    {"case_id": "ego-en", "original_query": "What is the Heart or Will Center?", "dense_query": "Explain the Ego Center and willpower.", "sparse_query": "Heart Will Ego Center", "expected_entities": ["Ego"]}
+  ]
+}
