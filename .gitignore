@@ -33,3 +33,6 @@ data/bodygraph_samples/vision_responses/
 
 # Ruff cache
 .ruff_cache/
+
+# cmux
+~/
