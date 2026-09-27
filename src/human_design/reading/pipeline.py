@@ -14,7 +14,7 @@ from human_design.rag.hybrid_retriever import HybridRetriever, Retriever
 from human_design.rag.reranker import Reranker, create_reranker
 from human_design.rag.retriever import load_dense_retriever
 from human_design.reading.chart_context import InvalidChartError, build_chart_context
-from human_design.reading.generator import generate_answer
+from human_design.reading.generator import GenerationError, generate_answer
 from human_design.reading.models import (
     AnswerResult, AnswerStatus, ChartContext, ChartImageQuestionRequest, ChartQuestionRequest,
     KnowledgeQuestionRequest, PromptContext,
@@ -109,7 +109,13 @@ class ReadingPipeline:
                                 "The chart failed validation. Please correct the chart extraction before asking again.")
         return self._answer(query, context)
 
-    def answer_chart_image_question(self, request: ChartImageQuestionRequest) -> AnswerResult:
+    def answer_chart_image_question(
+        self,
+        request: ChartImageQuestionRequest,
+        *,
+        on_validated_chart: Callable[[BodyGraphExtractionResult], None] | None = None,
+    ) -> AnswerResult:
+        """Notify an optional caller-owned cache after validation, before answering."""
         query = validate_query(request.query)
         if _needs_focus(query):
             return _focus_result()
@@ -122,6 +128,8 @@ class ReadingPipeline:
                 raise ReadingPipelineError("BodyGraph extraction failed") from None
         if not isinstance(result, BodyGraphExtractionResult):
             raise ReadingPipelineError("BodyGraph extraction must return BodyGraphExtractionResult")
+        if result.validation_result.is_valid and on_validated_chart is not None:
+            on_validated_chart(result)
         return self.answer_chart_question(ChartQuestionRequest(query, result))
 
     def _settings(self) -> AppConfig:
@@ -180,8 +188,8 @@ class ReadingPipeline:
         try:
             generator = self.generator if self.generator is not None else generate_answer
             return generator(prompt, config)
+        except GenerationError as exc:
+            # GenerationError contains only project-owned messages and safe diagnostics.
+            raise ReadingPipelineError(f"Generation failed [{exc.code}]: {exc}") from None
         except Exception:
-            raise ReadingPipelineError(
-                "Generation failed or returned invalid evidence references; check HD_RAG_REAL_GENERATION=1, "
-                "HD_RAG_GENERATION_MODEL and OPENAI_API_KEY"
-            ) from None
+            raise ReadingPipelineError("Generation failed [unexpected_error]: An unexpected generation error occurred") from None

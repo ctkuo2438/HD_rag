@@ -123,25 +123,26 @@ def test_supplied_but_unused_ids_are_omitted_with_one_safe_warning():
     assert len(client.calls) == 1
 
 
-@pytest.mark.parametrize("changes,message", [
-    ({"answer_markdown": "Explanation [S99]."}, "citation"),
-    ({"answer_markdown": "Explanation [S1] and [S99]."}, "citation"),
-    ({"answer_markdown": "Explanation [S0]."}, "citation"),
-    ({"answer_markdown": "Explanation [S1] and [Sbogus]."}, "citation"),
-    ({"used_source_ids": ["S99"]}, "source"),
-    ({"used_source_ids": ["S1", "S99"]}, "source"),
-    ({"answer_markdown": "Explanation [S2].", "used_source_ids": ["S1"]}, "listed"),
-    ({"used_source_ids": []}, "listed"),
-    ({"answer_markdown": "No bracket citation here."}, "citation"),
-    ({"answer_markdown": "No bracket citation here.", "used_source_ids": []}, "citation"),
-    ({"answer_markdown": r"An escaped token \[S1] is not a citation."}, "citation"),
-    ({"used_chart_fact_paths": ["derived_chart_data.basic_info.profile"]}, "chart"),
-    ({"used_chart_fact_paths": ["raw_vision.design.earth"]}, "chart"),
+@pytest.mark.parametrize("changes,message,code", [
+    ({"answer_markdown": "Explanation [S99]."}, "citation", "unknown_citation"),
+    ({"answer_markdown": "Explanation [S1] and [S99]."}, "citation", "unknown_citation"),
+    ({"answer_markdown": "Explanation [S0]."}, "citation", "unknown_citation"),
+    ({"answer_markdown": "Explanation [S1] and [Sbogus]."}, "citation", "unknown_citation"),
+    ({"used_source_ids": ["S99"]}, "source", "unknown_source"),
+    ({"used_source_ids": ["S1", "S99"]}, "source", "unknown_source"),
+    ({"answer_markdown": "Explanation [S2].", "used_source_ids": ["S1"]}, "listed", "unlisted_citation"),
+    ({"used_source_ids": []}, "listed", "unlisted_citation"),
+    ({"answer_markdown": "No bracket citation here."}, "citation", "missing_citations"),
+    ({"answer_markdown": "No bracket citation here.", "used_source_ids": []}, "citation", "missing_citations"),
+    ({"answer_markdown": r"An escaped token \[S1] is not a citation."}, "citation", "missing_citations"),
+    ({"used_chart_fact_paths": ["derived_chart_data.basic_info.profile"]}, "chart", "unknown_chart_fact"),
+    ({"used_chart_fact_paths": ["raw_vision.design.earth"]}, "chart", "unknown_chart_fact"),
 ])
-def test_invalid_citation_and_fact_references_fail_without_repair(changes, message):
+def test_invalid_citation_and_fact_references_fail_without_repair(changes, message, code):
     client = FakeClient(output(**changes))
-    with pytest.raises(GenerationValidationError, match=message):
+    with pytest.raises(GenerationValidationError, match=message) as caught:
         generate_answer(context(), settings(), client=client)
+    assert caught.value.code == code
     assert len(client.calls) == 1
 
 
@@ -149,8 +150,9 @@ def test_invalid_citation_and_fact_references_fail_without_repair(changes, messa
     '{"answer_markdown":"first","answer_markdown":"second"}', '{"answer_markdown":NaN}'])
 def test_malformed_structured_output_fails_without_repair(raw):
     client = FakeClient(raw=raw)
-    with pytest.raises(GenerationValidationError):
+    with pytest.raises(GenerationValidationError) as caught:
         generate_answer(context(), settings(), client=client)
+    assert caught.value.code == "structured_output"
     assert len(client.calls) == 1
 
 
@@ -162,16 +164,18 @@ def test_malformed_structured_output_fails_without_repair(raw):
 ])
 def test_wrong_field_types_and_blank_answers_fail(changes):
     client = FakeClient(output(**changes))
-    with pytest.raises(GenerationValidationError):
+    with pytest.raises(GenerationValidationError) as caught:
         generate_answer(context(), settings(), client=client)
+    assert caught.value.code == "structured_output"
     assert len(client.calls) == 1
 
 
 @pytest.mark.parametrize("status", ["incomplete", "failed", "cancelled", "in_progress"])
 def test_noncompleted_responses_do_not_produce_ok(status):
     client = FakeClient(status=status)
-    with pytest.raises(GenerationValidationError):
+    with pytest.raises(GenerationValidationError) as caught:
         generate_answer(context(), settings(), client=client)
+    assert caught.value.code == "incomplete_response"
     assert len(client.calls) == 1
 
 
@@ -198,8 +202,9 @@ def test_no_evidence_returns_before_render_config_or_provider(with_facts, monkey
 ])
 def test_real_provider_gates_before_import(monkeypatch, changes, message):
     forbid_openai_import(monkeypatch)
-    with pytest.raises(GenerationError, match=message):
+    with pytest.raises(GenerationError, match=message) as caught:
         generate_answer(context(), settings(**changes))
+    assert caught.value.code == "configuration"
 
 
 def test_unmarked_client_cannot_bypass_real_generation_gate(monkeypatch):
@@ -238,9 +243,36 @@ def test_failures_hide_private_payloads_and_do_not_chain_unsafe_errors(monkeypat
         client.response.output_text = secret
     with pytest.raises(GenerationError) as caught:
         generate_answer(prompt, config, client=None if stage == "construction" else client)
+    assert caught.value.code == {"construction": "provider_initialization", "request": "provider_request",
+                                 "output": "structured_output"}[stage]
     visible = "".join(traceback.format_exception(caught.value)) + caplog.text + str(capsys.readouterr())
     for value in ("fake-key", "/private/chart.png", "2000-01-01", prompt.sources[0].chunk.text, render_reading_prompt(prompt)):
         assert value not in visible
+
+
+@pytest.mark.parametrize("status", [400, 401, 429, 500, None, True, 200, "fake-key /private/chart.png"])
+def test_request_errors_expose_only_valid_http_status(status, caplog, capsys):
+    from httpx import Request, Response
+    from openai import APIStatusError
+
+    prompt = context()
+    private = "fake-key /private/chart.png birth-date-1901 " + render_reading_prompt(prompt)
+    error = APIStatusError(private, response=Response(400, request=Request("POST", "https://example.invalid")),
+                           body={"code": private, "param": private})
+    error.status_code = status
+    client = FakeClient(error=error)
+    with pytest.raises(GenerationError) as caught:
+        generate_answer(prompt, settings(), client=client)
+    assert caught.value.code == "provider_request"
+    if type(status) is int and 400 <= status <= 599:
+        assert f"HTTP {status}" in str(caught.value)
+    else:
+        assert "HTTP" not in str(caught.value)
+    visible = "".join(traceback.format_exception(caught.value)) + caplog.text + str(capsys.readouterr())
+    for value in ("fake-key", "/private/chart.png", "birth-date-1901", render_reading_prompt(prompt),
+                  prompt.sources[0].chunk.text):
+        assert value not in visible
+    assert len(client.calls) == 1 and client.calls[0]["store"] is False
 
 
 @pytest.mark.parametrize("private", ["fake-key", "/private/chart.png", "Complete synthetic passage number 1."])
@@ -251,11 +283,42 @@ def test_private_limitations_are_replaced_with_safe_warning(private):
     assert answer.warnings and private not in repr(answer)
 
 
+@pytest.mark.parametrize("field_name", ["answer_markdown", "limitations"])
+@pytest.mark.parametrize("phrase", [
+    "**yes**/**no**", "“uh-huh”/agreement", "“yes”/“no”", "“**yes**”/response",
+])
+def test_markdown_slash_prose_survives_generation_and_warning_validation(field_name, phrase):
+    text = f"Notice a {phrase} response as a reflective experiment. [S1]"
+    client = FakeClient(output(**{field_name: text if field_name == "answer_markdown" else [text]}))
+    answer = generate_answer(context(), settings(), client=client)
+    assert answer.status is AnswerStatus.OK
+    assert [citation.citation_id for citation in answer.citations] == ["S1"]
+    if field_name == "answer_markdown":
+        assert answer.answer_markdown == text
+    else:
+        assert answer.warnings == (text,)
+    assert len(client.calls) == 1 and client.calls[0]["store"] is False
+
+
+@pytest.mark.parametrize("path", ["**/private/chart.png**", r"`C:\private\chart.png`",
+                                  "[chart](file:///private/chart.png)",
+                                  "“/private/chart.png”", "**“/private/chart.png”**"])
+def test_real_paths_in_markdown_answers_still_fail_safely(path, caplog, capsys):
+    client = FakeClient(output(answer_markdown=f"See {path}. [S1]"))
+    with pytest.raises(GenerationValidationError) as caught:
+        generate_answer(context(), settings(), client=client)
+    assert caught.value.code == "private_output"
+    visible = "".join(traceback.format_exception(caught.value)) + caplog.text + str(capsys.readouterr())
+    assert path not in visible
+    assert len(client.calls) == 1 and client.calls[0]["store"] is False
+
+
 @pytest.mark.parametrize("private", ["fake-key", "Complete synthetic passage number 1."])
 def test_private_answer_echo_fails_safely(private):
     client = FakeClient(output(answer_markdown=f"{private} [S1]"))
     with pytest.raises(GenerationValidationError) as caught:
         generate_answer(context(), settings(openai_api_key="fake-key"), client=client)
+    assert caught.value.code == "private_output"
     assert private not in str(caught.value)
     assert len(client.calls) == 1
 

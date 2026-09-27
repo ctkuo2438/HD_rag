@@ -15,6 +15,7 @@ from human_design.rag.models import RetrievedChunk
 from human_design.rag.reranker import NoOpReranker, create_reranker
 from human_design.reading import ReadingPipeline
 from human_design.reading import pipeline as module
+from human_design.reading.generator import GenerationValidationError
 from human_design.reading.models import (
     AnswerResult, AnswerStatus, ChartImageQuestionRequest, ChartQuestionRequest, KnowledgeQuestionRequest,
 )
@@ -267,6 +268,55 @@ def test_image_facade_passes_path_only_to_phase2_extractor_then_typed_core(chart
     core.assert_called_once_with(ChartQuestionRequest("Explain Profile", chart))
 
 
+def test_image_facade_reports_validated_chart_before_downstream_failure(chart, monkeypatch):
+    validated = Mock()
+
+    def core(request):
+        validated.assert_called_once_with(chart)
+        assert request == ChartQuestionRequest("Explain Profile", chart)
+        raise module.ReadingPipelineError("Synthetic downstream failure")
+
+    monkeypatch.setattr(ReadingPipeline, "answer_chart_question", Mock(side_effect=core))
+    pipeline = ReadingPipeline(extractor=Mock(return_value=chart))
+    with pytest.raises(module.ReadingPipelineError, match="Synthetic downstream failure"):
+        pipeline.answer_chart_image_question(
+            ChartImageQuestionRequest("Explain Profile", Path("unread.png")),
+            on_validated_chart=validated,
+        )
+    validated.assert_called_once_with(chart)
+
+
+def test_image_facade_never_reports_an_invalid_chart(chart):
+    from human_design.vision.models import ParseResult
+
+    raw = replace(chart.raw_vision, personality=replace(chart.raw_vision.personality, sun=None))
+    derived = interpret_bodygraph(raw)
+    invalid = BodyGraphExtractionResult(raw, derived.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=derived))
+    validated = Mock()
+    generator = Mock(side_effect=AssertionError("invalid chart must stop first"))
+    result = ReadingPipeline(extractor=Mock(return_value=invalid), generator=generator).answer_chart_image_question(
+        ChartImageQuestionRequest("Explain Profile", Path("unread.png")), on_validated_chart=validated)
+    assert result.status is AnswerStatus.INVALID_CHART
+    validated.assert_not_called()
+    generator.assert_not_called()
+
+
+@pytest.mark.parametrize("query", ["", "Give me a complete reading of my chart."])
+def test_image_facade_guards_run_before_extraction_and_notification(query):
+    extractor, validated = Mock(), Mock()
+    pipeline = ReadingPipeline(extractor=extractor)
+    request = ChartImageQuestionRequest(query, Path("unread.png"))
+    if query:
+        result = pipeline.answer_chart_image_question(request, on_validated_chart=validated)
+        assert result.status is AnswerStatus.NEEDS_FOCUS
+    else:
+        with pytest.raises(InvalidQuestionError):
+            pipeline.answer_chart_image_question(request, on_validated_chart=validated)
+    extractor.assert_not_called()
+    validated.assert_not_called()
+
+
 def test_production_image_extractor_reuses_phase2_flow(chart, monkeypatch):
     from human_design.vision import pipeline as phase2
     from human_design.vision.config import load_vision_config
@@ -302,6 +352,17 @@ def test_operational_failures_are_sanitized(stage, chart, capsys):
         else:
             pipeline.answer_chart_question(ChartQuestionRequest("Profile", chart))
     assert private not in "".join(traceback.format_exception(caught.value)) + str(capsys.readouterr())
+    if stage == "generator":
+        assert "[unexpected_error]" in str(caught.value)
+
+
+def test_pipeline_preserves_safe_generation_diagnostic_without_retry():
+    pipeline, _ = service([])
+    generator = Mock(side_effect=GenerationValidationError(
+        "Generation referenced an unknown source ID", code="unknown_source"))
+    with pytest.raises(module.ReadingPipelineError, match=r"\[unknown_source\].*unknown source ID"):
+        replace(pipeline, generator=generator).answer_knowledge_question(KnowledgeQuestionRequest("Gate 42"))
+    generator.assert_called_once()
 
 
 @pytest.mark.parametrize("query", [

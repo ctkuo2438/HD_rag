@@ -328,6 +328,58 @@ def test_path_guard_accepts_profiles_urls_and_normal_prose() -> None:
     assert prompt.chart_facts == (fact,)
 
 
+@pytest.mark.parametrize("phrase", [
+    "**yes**/**no**", "*yes*/*no*", "`yes`/`no`", "***yes***/***no***",
+    "**yes**/no", "yes/**no**", "**yes**/*no*", "**是**/**否**",
+    "**4/6**/**1/3**", "**respond first**/**wait for clarity**",
+])
+def test_public_answer_accepts_markdown_slash_prose_without_rewriting(phrase: str) -> None:
+    text = f"Consider {phrase}. [S1]"
+    warning = f"The {phrase} distinction is only a reflection."
+    answer = AnswerResult(AnswerStatus.OK, text, warnings=(warning,))
+    assert answer.answer_markdown == text
+    assert answer.warnings == (warning,)
+
+
+@pytest.mark.parametrize("phrase", [
+    "“uh-huh”/agreement", "“uh-uh”/resistance", "“yes”/“no”",
+    "‘yes’/response", '"yes"/response', "'yes'/response",
+    "「是」/回應", "『是』/『否』", "**“yes”**/response", "“**yes**”/response",
+])
+def test_public_answer_accepts_quoted_slash_prose_without_rewriting(phrase: str) -> None:
+    # Synthetic reproduction of the live failure: a closing quote before '/'
+    # was mistaken for the start of an absolute filesystem path.
+    text = f"Notice {phrase} as a reflective experiment. [S1]"
+    warning = f"The {phrase} distinction is only a reflection."
+    answer = AnswerResult(AnswerStatus.OK, text, warnings=(warning,))
+    assert answer.answer_markdown == text
+    assert answer.warnings == (warning,)
+
+
+@pytest.mark.parametrize("path", [
+    "“/private/chart.png”", "‘/private/chart.png’", "「/private/chart.png」",
+    "**“/private/chart.png”**", "prefix“/private/chart.png”", "“C:/private/chart.png”",
+    "/private/chart.png", "**/private/chart.png**", "`/private/chart.png`",
+    "/**private**/chart.png", "prefix**/private/chart.png**",
+    r"C:\private\chart.png", r"**C:\private\chart.png**", "C:/**private**/chart.png",
+    r"\\host\share\chart.png", "file:///private/chart.png", "[chart](/private/chart.png)",
+])
+@pytest.mark.parametrize("field_name", ["answer_markdown", "warnings"])
+def test_public_answer_still_rejects_real_paths_with_markdown(path: str, field_name: str) -> None:
+    values = {"answer_markdown": "Reflective explanation [S1].", "warnings": ()}
+    text = f"See {path}. [S1]"
+    values[field_name] = text if field_name == "answer_markdown" else (text,)
+    with pytest.raises(ValueError, match="absolute filesystem path") as caught:
+        AnswerResult(AnswerStatus.OK, **values)
+    assert path not in str(caught.value)
+
+
+def test_prose_normalization_does_not_relax_structured_provenance() -> None:
+    with pytest.raises(ValueError, match="document_title"):
+        SourceCitation("S1", "chunk-42", "reference.pdf",
+                       document_title="“reference”/private/chart.png")
+
+
 def test_citation_and_answer_exclude_internal_provenance() -> None:
     citation = SourceCitation("S1", "chunk-42", "reference.pdf", "Synthetic Reference", "7", 7)
     assert {item.name for item in fields(citation)} == {

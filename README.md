@@ -4,6 +4,8 @@ Phase 1 is the stable baseline: a local, text-only Human Design knowledge base b
 
 Phase 3 v1 adds focused, cited Q&A using a separate hybrid index and an optional validated Phase 2 chart. Full-chart readings remain deferred to Phase 3.1.
 
+Phase 4 adds a small local Streamlit interface for the same focused Q&A pipeline. See [Local web app](#phase-4-local-web-app).
+
 Phase 1 uses this fixed pipeline:
 
 ```text
@@ -386,3 +388,48 @@ After offline tests pass, an optional intentional paid smoke test can be reviewe
 - Reflective framing: does it encourage experimentation and avoid diagnosis, guarantees, or deterministic predictions?
 
 These checks require human review of an actual answer; automated tests validate structure, orchestration, citations, and privacy boundaries without an LLM judge. No paid smoke test is part of the final offline gate.
+
+## Phase 4: Local Web App
+
+From the repository root, start the single-page interface:
+
+```sh
+uv run --extra rerank streamlit run scripts/streamlit_app.py
+```
+
+Open `http://127.0.0.1:8501`. The project Streamlit configuration binds to the local computer and disables Streamlit usage telemetry. Stop the server with Ctrl+C. The rerank extra installs optional Cohere support; the existing environment settings still decide whether Cohere is enabled.
+
+Enter one focused question, optionally upload a BodyGraph image, then select **送出問題**. Without an image the app answers knowledge questions. With an image it uses the existing Phase 2 image facade and typed Phase 3 chart pipeline. The result shows the answer, cited books/pages, selected chart facts used, and limitations. A spinner shows elapsed time while the request runs. Image questions can take several minutes.
+
+Opening the page, editing inputs, or rerendering an existing answer does not make provider calls. Only submitting a question starts the pipeline. Within the current browser session, an image is parsed once after successful validation. Follow-up questions reuse its typed `BodyGraphExtractionResult` through the chart core. The cache uses a SHA-256 fingerprint of the image bytes: renaming the same upload reuses the result, changing its contents triggers extraction, and returning to a previously validated image reuses its result. Failed or invalid extractions are not cached; a valid extraction remains available even if later retrieval or generation fails. Each question still performs fact selection, retrieval, configured reranking and generation, so those provider costs remain.
+
+Validated chart results and the latest public answer stay only in that session's server memory, without a shared cache or disk history. Reloading the browser tab, starting a new session or restarting the server requires parsing again. Cached chart results contain no image bytes or temporary image paths.
+
+The existing hybrid index and provider configuration are required for real answers. The web app does not build an index. Keep keys and model choices in the existing private `.env` or process environment. For intentional real chart Q&A with Cohere, after configuring the keys/models and building the index:
+
+```sh
+HD_RAG_RERANK_PROVIDER=cohere \
+HD_RAG_REAL_RERANK_API=1 \
+HD_VISION_REAL_API=1 \
+HD_RAG_REAL_EMBEDDINGS=1 \
+HD_RAG_REAL_GENERATION=1 \
+  uv run --extra rerank streamlit run scripts/streamlit_app.py
+```
+
+The same [provider costs and data-sharing rules](#paid-provider-opt-ins-and-privacy) apply. PNG, JPEG, WebP and GIF uploads are limited to 20 MB. On a cache miss, a private temporary copy with an application-controlled filename is passed only to the existing image facade, then deleted on success or failure. Cache hits skip the temporary copy and Vision entirely. Streamlit holds the selected upload in memory while it remains attached to the session. No uploaded file is copied into repository data/storage or committed.
+
+Web tests use Streamlit AppTest, injected fake pipelines, synthetic uploads and temporary directories. Run the [full offline verification](#default-verification) to include them. To open the real UI with every paid provider explicitly disabled:
+
+```sh
+env \
+  -u OPENAI_API_KEY \
+  -u COHERE_API_KEY \
+  HD_RAG_REAL_EMBEDDINGS=0 \
+  HD_RAG_REAL_GENERATION=0 \
+  HD_RAG_RERANK_PROVIDER=none \
+  HD_RAG_REAL_RERANK_API=0 \
+  HD_VISION_REAL_API=0 \
+  uv run streamlit run scripts/streamlit_app.py
+```
+
+Submitting a focused question in this offline mode displays safe configuration guidance. Process values override `.env`, including Cohere opt-ins. Input validation, the focused-Q&A guard, citation validation and existing provider gates remain in force.

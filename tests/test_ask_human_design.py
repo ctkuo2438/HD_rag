@@ -117,6 +117,48 @@ def test_unexpected_errors_never_print_private_provider_details(cli, error, caps
     assert all(value not in stderr for value in PRIVATE.split())
 
 
+@pytest.mark.parametrize("json_mode", [False, True])
+@pytest.mark.parametrize("failure,code", [
+    ("request", "provider_request"), ("json", "structured_output"),
+    ("incomplete", "incomplete_response"), ("citation", "unknown_citation"),
+    ("chart_fact", "unknown_chart_fact"), ("private", "private_output"),
+])
+def test_real_generator_diagnostics_reach_cli_without_private_output(cli, failure, code, json_mode, monkeypatch, capsys):
+    config = replace(load_config(env={}), real_generation=True,
+                     generation_model="fake-model", openai_api_key="fake-key")
+    payload = {"answer_markdown": "Reflective explanation [S1].", "used_source_ids": ["S1"],
+               "used_chart_fact_paths": [], "limitations": []}
+    if failure == "citation":
+        payload["answer_markdown"] = "Explanation [S99]."
+    elif failure == "chart_fact":
+        payload["used_chart_fact_paths"] = [PRIVATE]
+    elif failure == "private":
+        payload["answer_markdown"] = PRIVATE + " [S1]"
+    create = Mock(side_effect=RuntimeError(PRIVATE) if failure == "request" else None,
+                  return_value=SimpleNamespace(status="incomplete" if failure == "incomplete" else "completed",
+                      output_text=PRIVATE if failure == "json" else json.dumps(payload)))
+    client = SimpleNamespace(responses=SimpleNamespace(create=create), close=Mock())
+    constructor = Mock(return_value=client)
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=constructor))
+
+    def retriever(backend):
+        return SimpleNamespace(ingestion_id="same", retrieve=lambda *args: [RetrievedChunk(
+            "canonical", "complete-private-passage", "reference.pdf", **{backend + "_rank": 1})])
+
+    pipeline = ReadingPipeline(config=config, dense_retriever=retriever("dense"), sparse_retriever=retriever("sparse"))
+    assert cli.main(["Gate 42"] + (["--json"] if json_mode else []), pipeline=pipeline) == 2
+    stdout, stderr = capsys.readouterr()
+    assert stdout == "" and f"[{code}]" in stderr and "Traceback" not in stderr
+    for value in PRIVATE.split():
+        assert value not in stderr
+    constructor.assert_called_once()
+    assert constructor.call_args.kwargs["max_retries"] == 0
+    create.assert_called_once()
+    assert create.call_args.kwargs["store"] is False
+    assert create.call_args.kwargs["input"] not in stderr
+    client.close.assert_called_once()
+
+
 def test_invalid_question_returns_safe_usage_error(cli, capsys):
     assert cli.main([" "], pipeline=ReadingPipeline()) == 2
     stdout, stderr = capsys.readouterr()

@@ -84,6 +84,17 @@ def test_source_fingerprints_hash_bytes_in_discovery_order(tmp_path: Path) -> No
     assert hybrid.create_canonical_nodes(nodes, sources, config.pdf_dir)[0].node_id != before
 
 
+@pytest.mark.parametrize("blank", ["", " \t\r\n", "\u00a0\u3000"])
+def test_canonical_nodes_skip_blank_text_without_changing_content_ids(tmp_path: Path, blank: str) -> None:
+    config, nodes, manifest = _corpus(tmp_path)
+    empty = TextNode(text=blank, metadata=dict(nodes[0].metadata))
+    chunks = [empty, nodes[0], empty, *nodes[1:], empty]
+    actual = hybrid.create_canonical_nodes(chunks, manifest.source_fingerprints, config.pdf_dir)
+    assert [(node.node_id, node.text) for node in actual] == [(node.node_id, node.text) for node in nodes]
+    assert [node.metadata["chunk_index"] for node in actual] == [0, 1, 0]
+    assert hybrid.create_canonical_nodes([empty], manifest.source_fingerprints, config.pdf_dir) == []
+
+
 def test_duplicate_source_bytes_fail_with_only_relative_names(tmp_path: Path) -> None:
     (tmp_path / "first.pdf").write_bytes(b"same")
     (tmp_path / "second.pdf").write_bytes(b"same")
@@ -253,10 +264,18 @@ def build_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return config
 
 
-def test_coordinated_build_shares_objects_ids_and_identity(build_setup, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("include_blank_pages", [False, True])
+def test_coordinated_build_shares_objects_ids_and_identity(
+    build_setup, monkeypatch: pytest.MonkeyPatch, include_blank_pages: bool,
+) -> None:
     from human_design.rag import bm25
     from human_design.rag.vector_store import create_chroma_client
     config = build_setup
+    if include_blank_pages:
+        documents = hybrid.load_pdfs(config.pdf_dir)
+        documents.extend(Document(text=text, metadata={
+            **documents[0].metadata, "page_label": str(page), "page_number": page,
+        }) for page, text in enumerate(("", " \t\r\n"), 3))
     seen = {}
     real_dense, real_sparse = hybrid.build_phase3_chroma, bm25.build_and_persist_bm25
     def dense(nodes, *args, **kwargs):
@@ -274,6 +293,7 @@ def test_coordinated_build_shares_objects_ids_and_identity(build_setup, monkeypa
     assert seen["ingestion_id"] == manifest.ingestion_id
     canonical = hybrid.load_nodes(config.index_dir / "nodes.jsonl", manifest)
     ids = [node.node_id for node in canonical]
+    assert len(ids) == 2
     collection = create_chroma_client(config.index_dir / "chroma").get_collection(hybrid.COLLECTION_NAME)
     assert set(collection.get(include=[])["ids"]) == set(ids)
     sparse_adapter = bm25.load_bm25_retriever(config.index_dir / "bm25", manifest.ingestion_id)
@@ -283,6 +303,22 @@ def test_coordinated_build_shares_objects_ids_and_identity(build_setup, monkeypa
         assert collection.metadata[name] == getattr(manifest, name)
     assert verify_hybrid_index(config) == manifest
     assert not config.chroma_dir.exists()
+
+
+def test_all_blank_pages_fail_before_embedding_or_storage(build_setup, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = build_setup
+    documents = hybrid.load_pdfs(config.pdf_dir)
+    monkeypatch.setattr(hybrid, "load_pdfs", lambda path: [
+        Document(text=" \t\r\n", metadata=dict(documents[0].metadata)),
+    ])
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Blank documents must not construct embeddings or indexes")
+
+    monkeypatch.setattr(hybrid, "create_openai_embedding_model_from_config", forbidden)
+    with pytest.raises(hybrid.HybridIndexError, match="No canonical text chunks"):
+        build_hybrid_index(config)
+    assert not config.index_dir.exists()
 
 
 @pytest.mark.parametrize("builder", ["dense", "sparse"])

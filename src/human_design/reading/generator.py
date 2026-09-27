@@ -11,6 +11,7 @@ from human_design.reading.models import (
     AnswerResult,
     AnswerStatus,
     PromptContext,
+    _markdown_path_check_text,
     _reject_absolute_paths,
 )
 from human_design.reading.prompt import build_source_citations, render_reading_prompt
@@ -18,7 +19,11 @@ from human_design.reading.query_builder import validate_query
 
 
 class GenerationError(ValueError):
-    """A safe configuration or provider error without private request/response data."""
+    """Project-owned message/code only; never include provider text or payloads."""
+
+    def __init__(self, message: str, *, code: str = "generation_error") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class GenerationValidationError(GenerationError):
@@ -66,11 +71,11 @@ def _validate_config(config: AppConfig, client: _Client | None) -> None:
     offline_fake = client is not None and getattr(client, "_test_only", False) is True
     if not offline_fake:
         if config.real_generation is not True:
-            raise GenerationError("Enable HD_RAG_REAL_GENERATION=1 for real generation")
+            raise GenerationError("Enable HD_RAG_REAL_GENERATION=1 for real generation", code="configuration")
         if not isinstance(config.openai_api_key, str) or not config.openai_api_key.strip():
-            raise GenerationError("Real generation requires OPENAI_API_KEY")
+            raise GenerationError("Real generation requires OPENAI_API_KEY", code="configuration")
     if not isinstance(config.generation_model, str) or not config.generation_model.strip():
-        raise GenerationError("Generation requires HD_RAG_GENERATION_MODEL")
+        raise GenerationError("Generation requires HD_RAG_GENERATION_MODEL", code="configuration")
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -87,9 +92,13 @@ def _invalid_constant(value: str) -> object:
 
 
 def _parse_response(response: _Response) -> _AnswerPayload:
+    code = "structured_output"
     try:
-        if response.status != "completed" or not isinstance(response.output_text, str):
+        if response.status != "completed":
+            code = "incomplete_response"
             raise ValueError("Incomplete response")
+        if not isinstance(response.output_text, str):
+            raise ValueError("Invalid output type")
         payload = json.loads(response.output_text, object_pairs_hook=_unique_object,
                              parse_constant=_invalid_constant)
         if not isinstance(payload, dict) or set(payload) != set(_SCHEMA["required"]):
@@ -101,7 +110,9 @@ def _parse_response(response: _Response) -> _AnswerPayload:
                 raise ValueError("Invalid field type")
     except Exception:
         # JSON/SDK errors can retain the complete private response in their text.
-        raise GenerationValidationError("Generation returned invalid structured output") from None
+        message = ("Generation response did not complete" if code == "incomplete_response"
+                   else "Generation returned invalid structured output")
+        raise GenerationValidationError(message, code=code) from None
     return cast(_AnswerPayload, payload)
 
 
@@ -117,23 +128,25 @@ def _validated_answer(
     supplied_ids = {source.citation_id for source in context.sources}
     used_ids = set(payload["used_source_ids"])
     if not used_ids <= supplied_ids:
-        raise GenerationValidationError("Generation referenced an unknown source ID")
+        raise GenerationValidationError("Generation referenced an unknown source ID", code="unknown_source")
     used_paths = set(payload["used_chart_fact_paths"])
     if not used_paths <= {fact.source_path for fact in context.chart_facts}:
-        raise GenerationValidationError("Generation referenced an unsupplied chart fact")
+        raise GenerationValidationError("Generation referenced an unsupplied chart fact", code="unknown_chart_fact")
     answer = payload["answer_markdown"]
     cited_ids = set(_CITATION.findall(answer))
-    if not cited_ids or not cited_ids <= supplied_ids:
-        raise GenerationValidationError("Generation requires valid supplied bracket citations")
+    if not cited_ids:
+        raise GenerationValidationError("Generation requires valid supplied bracket citations", code="missing_citations")
+    if not cited_ids <= supplied_ids:
+        raise GenerationValidationError("Generation referenced an unknown bracket citation", code="unknown_citation")
     if not cited_ids <= used_ids:
-        raise GenerationValidationError("Every bracket citation must be listed in used_source_ids")
+        raise GenerationValidationError("Every bracket citation must be listed in used_source_ids", code="unlisted_citation")
     if _private_echo(answer, context, config, rendered):
-        raise GenerationValidationError("Generation returned private evidence or credentials")
+        raise GenerationValidationError("Generation returned private evidence or credentials", code="private_output")
 
     warnings = []
     for limitation in payload["limitations"]:
         try:
-            _reject_absolute_paths(limitation)
+            _reject_absolute_paths(_markdown_path_check_text(limitation))
             if _private_echo(limitation, context, config, rendered):
                 raise ValueError("Private limitation")
         except ValueError:
@@ -150,7 +163,7 @@ def _validated_answer(
             warnings=tuple(warnings),
         )
     except (TypeError, ValueError):
-        raise GenerationValidationError("Generation returned unsafe public output") from None
+        raise GenerationValidationError("Generation returned unsafe public output", code="private_output") from None
 
 
 def generate_answer(
@@ -175,7 +188,7 @@ def generate_answer(
 
             client = OpenAI(api_key=config.openai_api_key, max_retries=0)
         except Exception:
-            raise GenerationError("Unable to initialize the generation provider") from None
+            raise GenerationError("Unable to initialize the generation provider", code="provider_initialization") from None
     assert client is not None
     try:
         response = client.responses.create(
@@ -183,8 +196,11 @@ def generate_answer(
             text={"format": {"type": "json_schema", "name": "human_design_answer",
                              "strict": True, "schema": _SCHEMA}},
         )
-    except Exception:
-        raise GenerationError("Generation provider request failed") from None
+    except Exception as exc:
+        # SDK status_code is useful; message/body/code/param can contain private data.
+        status = getattr(exc, "status_code", None)
+        detail = f" (HTTP {status})" if type(status) is int and 400 <= status <= 599 else ""
+        raise GenerationError(f"Generation provider request failed{detail}", code="provider_request") from None
     finally:
         if owned:
             try:

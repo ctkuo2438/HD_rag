@@ -13,6 +13,7 @@ dependencies = [
     "llama-index-vector-stores-chroma>=0.5.5",
     "pymupdf>=1.27.2.3",
     "python-dotenv>=1.2.2",
+    "streamlit>=1.64.0",
 ]
 
 [project.optional-dependencies]

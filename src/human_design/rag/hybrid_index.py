@@ -135,11 +135,14 @@ def create_canonical_nodes(
             relative = metadata.get("source_relpath", metadata.get("source_file", metadata.get("file_name")))
         if relative not in fingerprints:
             raise HybridIndexError("Chunk source does not match discovered source fingerprints")
+        text = normalize_chunk_text(chunk.get_content(metadata_mode=MetadataMode.NONE))
+        # VectorStoreIndex skips empty content; both indexes must share that corpus.
+        if not text:
+            continue
         source_sha256 = fingerprints[relative]
         page_key = stable_page_key(metadata)
         ordinal = ordinals[source_sha256, page_key]
         ordinals[source_sha256, page_key] += 1
-        text = normalize_chunk_text(chunk.get_content(metadata_mode=MetadataMode.NONE))
         chunk_id = compute_chunk_id(source_sha256, page_key, ordinal, text)
         metadata.update(chunk_id=chunk_id, source_sha256=source_sha256, source_relpath=relative,
                         source_file=PurePosixPath(relative).name, page_key=page_key, chunk_index=ordinal)

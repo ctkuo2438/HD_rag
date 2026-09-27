@@ -19,6 +19,12 @@ _ABSOLUTE_PATH_IN_TEXT = re.compile(
     r"\bfile://|(?<![\w:/\\])(?:[A-Za-z]:[\\/]|[\\/])[^\s<>\"']+",
     re.IGNORECASE,
 )
+_INLINE_PROSE_WORDS = re.compile(
+    r"(?P<opening>\*{1,3}|_{1,3}|`+|[\"'“‘「『])"
+    r"(?P<words>\w+(?:[ /.'’-]+\w+)*)"
+    r"(?P<closing>\*{1,3}|_{1,3}|`+|[\"'”’」』])"
+)
+_PROSE_QUOTE_PAIRS = {"“": "”", "‘": "’", "「": "」", "『": "』"}
 
 
 @dataclass(frozen=True)
@@ -201,7 +207,10 @@ class AnswerResult:
             self.chart_facts_used, ChartFact, "chart_facts_used",
         ))
         object.__setattr__(self, "warnings", _typed_tuple(self.warnings, str, "warnings"))
-        _reject_absolute_paths(asdict(self))
+        path_check = asdict(self)
+        path_check["answer_markdown"] = _markdown_path_check_text(self.answer_markdown)
+        path_check["warnings"] = [_markdown_path_check_text(warning) for warning in self.warnings]
+        _reject_absolute_paths(path_check)
 
 
 def _typed_tuple(values: Iterable[_T], item_type: type[_T], name: str) -> tuple[_T, ...]:
@@ -211,6 +220,27 @@ def _typed_tuple(values: Iterable[_T], item_type: type[_T], name: str) -> tuple[
     if any(not isinstance(item, item_type) for item in result):
         raise TypeError(f"{name} must contain only {item_type.__name__} values")
     return result
+
+
+def _markdown_path_check_text(text: str) -> str:
+    """Unwrap quoted/formatted words only in the prose path-check copy.
+
+    **yes**/**no** and “yes”/response are prose, not filesystem roots. Match
+    paired delimiters and repeat for nested quotes/emphasis. Leading roots,
+    drive colons and backslashes remain excluded from the word pattern.
+    Public text is unchanged; structured provenance keeps the strict guard.
+    """
+    def unwrap(match: re.Match[str]) -> str:
+        opening = match["opening"]
+        if match["closing"] == _PROSE_QUOTE_PAIRS.get(opening, opening):
+            return match["words"]
+        return match[0]
+
+    while True:
+        unwrapped = _INLINE_PROSE_WORDS.sub(unwrap, text)
+        if unwrapped == text:
+            return text
+        text = unwrapped
 
 
 def _reject_absolute_paths(value: object, name: str = "context") -> None:
