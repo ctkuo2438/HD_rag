@@ -89,7 +89,7 @@ def compute_chunk_id(source_sha256: str, page_key: str, chunk_index: int, text: 
 
 
 def fingerprint_sources(pdf_dir: Path) -> tuple[SourceFingerprint, ...]:
-    """Reuse Phase 1 discovery; reject duplicate bytes before creating any nodes."""
+    """Use shared PDF discovery; reject duplicate bytes before creating any nodes."""
     try:
         sources = tuple(SourceFingerprint(
             path.relative_to(pdf_dir).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -352,12 +352,6 @@ def require_real_embeddings(config: AppConfig) -> None:
         raise HybridIndexError("OPENAI_API_KEY is required for real embeddings")
 
 
-def _reject_legacy_target(config: AppConfig) -> None:
-    root, legacy = config.index_dir.resolve(), config.chroma_dir.resolve()
-    if root == legacy or root.is_relative_to(legacy) or legacy.is_relative_to(root):
-        raise HybridIndexError("Phase 3 index target must be separate from the legacy Phase 1 directory")
-
-
 def _dense_metadata(nodes: Sequence[BaseNode], manifest: HybridManifest) -> dict[str, str | int]:
     return {"embedding_model": manifest.embedding_model, "ingestion_id": manifest.ingestion_id,
             "schema_version": manifest.schema_version, "ingestion_version": manifest.ingestion_version,
@@ -369,7 +363,6 @@ def build_phase3_chroma(
     nodes: list[BaseNode], config: AppConfig, manifest: HybridManifest, embed_model: BaseEmbedding,
 ) -> None:
     """Build only a fresh Phase 3 collection from this run's canonical node objects."""
-    _reject_legacy_target(config)
     _manifest_from_dict(asdict(manifest))
     validate_canonical_nodes(nodes, manifest)
     directory = config.index_dir / "chroma"
@@ -405,7 +398,6 @@ def _validate_dense_collection(collection: Any, manifest: HybridManifest, nodes:
 
 def open_phase3_chroma(config: AppConfig) -> tuple[ChromaVectorStore, HybridManifest]:
     """Strict existing-index open; never get-or-create a collection or repair metadata."""
-    _reject_legacy_target(config)
     manifest = load_manifest(config.index_dir / "manifest.json")
     if manifest.embedding_model != config.embedding_model:
         raise HybridIndexError("Phase 3 manifest embedding model does not match configuration")
@@ -439,11 +431,10 @@ def verify_hybrid_index(config: AppConfig) -> HybridManifest:
 
 
 def build_hybrid_index(config: AppConfig, *, embed_model: BaseEmbedding | None = None) -> HybridManifest:
-    """One explicitly opted-in build; preserve Phase 1 extraction/chunking semantics."""
+    """One explicitly opted-in build using the shared PDF extraction and chunking."""
     from human_design.rag.bm25 import build_and_persist_bm25
 
     require_real_embeddings(config)
-    _reject_legacy_target(config)
     require_empty_directory(config.index_dir)
     try:
         documents = load_pdfs(config.pdf_dir)

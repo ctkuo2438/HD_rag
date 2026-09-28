@@ -1,4 +1,5 @@
 from dataclasses import replace
+from unittest.mock import Mock
 
 import pytest
 
@@ -6,92 +7,32 @@ from human_design.rag import embeddings
 from human_design.rag.config import DEFAULT_EMBEDDING_MODEL, load_config
 
 
-def test_default_embedding_model_is_text_embedding_3_small(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(("options", "model", "api_key"), [
+    ({}, DEFAULT_EMBEDDING_MODEL, None),
+    ({"embedding_model": "custom-model"}, "custom-model", None),
+    ({"api_key": "fake-api-key"}, DEFAULT_EMBEDDING_MODEL, "fake-api-key"),
+])
+def test_embedding_factory_passes_defaults_and_overrides(
+    monkeypatch: pytest.MonkeyPatch, options: dict[str, str], model: str, api_key: str | None,
 ) -> None:
-    captured_kwargs: dict[str, str | None] = {}
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    constructor = Mock(return_value=object())
+    monkeypatch.setattr(embeddings, "OpenAIEmbedding", constructor)
 
-    class FakeOpenAIEmbedding:
-        def __init__(self, **kwargs: str | None) -> None:
-            captured_kwargs.update(kwargs)
+    result = embeddings.create_openai_embedding_model(**options)
 
-    monkeypatch.setattr(embeddings, "OpenAIEmbedding", FakeOpenAIEmbedding)
-
-    embedding_model = embeddings.create_openai_embedding_model()
-
-    assert isinstance(embedding_model, FakeOpenAIEmbedding)
-    assert captured_kwargs["model"] == DEFAULT_EMBEDDING_MODEL
-    assert captured_kwargs["api_key"] is None
-
-
-def test_embedding_model_override_is_passed_to_openai_embedding(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_kwargs: dict[str, str | None] = {}
-
-    class FakeOpenAIEmbedding:
-        def __init__(self, **kwargs: str | None) -> None:
-            captured_kwargs.update(kwargs)
-
-    monkeypatch.setattr(embeddings, "OpenAIEmbedding", FakeOpenAIEmbedding)
-
-    embeddings.create_openai_embedding_model(embedding_model="custom-model")
-
-    assert captured_kwargs["model"] == "custom-model"
-
-
-def test_api_key_argument_is_passed_to_openai_embedding(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_kwargs: dict[str, str | None] = {}
-
-    class FakeOpenAIEmbedding:
-        def __init__(self, **kwargs: str | None) -> None:
-            captured_kwargs.update(kwargs)
-
-    monkeypatch.setattr(embeddings, "OpenAIEmbedding", FakeOpenAIEmbedding)
-
-    embeddings.create_openai_embedding_model(api_key="test-api-key")
-
-    assert captured_kwargs["api_key"] == "test-api-key"
+    constructor.assert_called_once_with(model=model, api_key=api_key)
+    assert result is constructor.return_value
 
 
 def test_create_openai_embedding_model_from_config_uses_model_and_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_kwargs: dict[str, str | None] = {}
+    constructor = Mock(return_value=object())
+    monkeypatch.setattr(embeddings, "OpenAIEmbedding", constructor)
+    config = replace(load_config(env={}), embedding_model="config-model", openai_api_key="fake-config-key")
 
-    class FakeOpenAIEmbedding:
-        def __init__(self, **kwargs: str | None) -> None:
-            captured_kwargs.update(kwargs)
+    result = embeddings.create_openai_embedding_model_from_config(config)
 
-    monkeypatch.setattr(embeddings, "OpenAIEmbedding", FakeOpenAIEmbedding)
-    config = replace(
-        load_config(env={}),
-        embedding_model="config-model",
-        openai_api_key="config-api-key",
-    )
-
-    embeddings.create_openai_embedding_model_from_config(config)
-
-    assert captured_kwargs == {
-        "model": "config-model",
-        "api_key": "config-api-key",
-    }
-
-
-def test_embedding_factory_does_not_require_openai_api_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    class FakeOpenAIEmbedding:
-        def __init__(self, **kwargs: str | None) -> None:
-            self.kwargs = kwargs
-
-    monkeypatch.setattr(embeddings, "OpenAIEmbedding", FakeOpenAIEmbedding)
-
-    embedding_model = embeddings.create_openai_embedding_model()
-
-    assert isinstance(embedding_model, FakeOpenAIEmbedding)
-    assert embedding_model.kwargs["api_key"] is None
+    constructor.assert_called_once_with(model="config-model", api_key="fake-config-key")
+    assert result is constructor.return_value

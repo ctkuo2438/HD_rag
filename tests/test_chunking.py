@@ -1,3 +1,4 @@
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -94,6 +95,8 @@ def test_chunk_documents_returns_nodes_from_in_memory_documents() -> None:
     assert result.document_count == 1
     assert result.chunk_count == len(nodes)
     assert all(node.get_content() for node in nodes)
+    with pytest.raises(FrozenInstanceError):
+        result.chunk_count = 0
 
 
 def test_chunk_documents_adds_default_metadata_to_each_node(

@@ -1,4 +1,4 @@
-"""Chunk already-loaded LlamaIndex documents for the Phase 1 RAG pipeline."""
+"""Chunk already-loaded LlamaIndex documents for hybrid indexing."""
 
 from __future__ import annotations
 

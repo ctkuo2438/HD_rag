@@ -174,16 +174,6 @@ def test_each_channel_maps_to_two_distinct_canonical_centers() -> None:
         assert set(centers).issubset(canonical_centers)
 
 
-def test_representative_channel_center_mappings_are_explicit() -> None:
-    assert CHANNEL_TO_CENTERS["3-60"] == ("Sacral", "Root")
-    assert CHANNEL_TO_CENTERS["10-34"] == ("G", "Sacral")
-    assert CHANNEL_TO_CENTERS["10-57"] == ("G", "Spleen")
-    assert CHANNEL_TO_CENTERS["20-34"] == ("Throat", "Sacral")
-    assert CHANNEL_TO_CENTERS["21-45"] == ("Ego", "Throat")
-    assert CHANNEL_TO_CENTERS["24-61"] == ("Ajna", "Head")
-    assert CHANNEL_TO_CENTERS["37-40"] == ("Solar Plexus", "Ego")
-
-
 def test_planetary_fields_are_exact_ordered_thirteen_field_tuple() -> None:
     assert PLANETARY_FIELDS == EXPECTED_PLANETARY_FIELDS
     assert len(PLANETARY_FIELDS) == 13

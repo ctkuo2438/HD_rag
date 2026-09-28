@@ -11,8 +11,6 @@ from dotenv import dotenv_values # for loading .env files
 
 
 DEFAULT_PDF_DIR = Path("data/pdfs")
-DEFAULT_CHROMA_DIR = Path("storage/chroma")
-DEFAULT_COLLECTION_NAME = "human_design"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 80
@@ -27,22 +25,10 @@ DEFAULT_RRF_K = 60
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 
-# Environment variable names recognized by load_config().
-#
-# Precedence order:
-# explicit env / shell environment > .env file > defaults
-#
-# In my local .env, these variables are currently set, so load_config()
-# will use the .env values unless they are overridden by shell environment variables.
+# Explicit mappings / process environment override .env values and defaults.
 ENV_PDF_DIR = "HD_RAG_PDF_DIR"
-ENV_CHROMA_DIR = "HD_RAG_CHROMA_DIR"
-ENV_COLLECTION = "HD_RAG_COLLECTION"
 ENV_EMBED_MODEL = "HD_RAG_EMBED_MODEL"
 ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
-
-# In my local .env, these variables are currently not set, so load_config()
-# will use DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP, and DEFAULT_INGESTION_VERSION
-# unless they are later set in .env or overridden by shell environment variables.
 ENV_CHUNK_SIZE = "HD_RAG_CHUNK_SIZE"
 ENV_CHUNK_OVERLAP = "HD_RAG_CHUNK_OVERLAP"
 ENV_INGESTION_VERSION = "HD_RAG_INGESTION_VERSION"
@@ -51,8 +37,6 @@ ENV_INGESTION_VERSION = "HD_RAG_INGESTION_VERSION"
 @dataclass(frozen=True)
 class AppConfig:
     pdf_dir: Path
-    chroma_dir: Path
-    collection_name: str
     embedding_model: str
     openai_api_key: str | None = field(repr=False)
     chunk_size: int
@@ -85,8 +69,6 @@ def load_config(
 
     config = AppConfig(
         pdf_dir=Path(values.get(ENV_PDF_DIR, str(DEFAULT_PDF_DIR))),
-        chroma_dir=Path(values.get(ENV_CHROMA_DIR, str(DEFAULT_CHROMA_DIR))),
-        collection_name=values.get(ENV_COLLECTION, DEFAULT_COLLECTION_NAME),
         embedding_model=values.get(ENV_EMBED_MODEL, DEFAULT_EMBEDDING_MODEL),
         openai_api_key=_get_optional_string(values, ENV_OPENAI_API_KEY),
         chunk_size=chunk_size,

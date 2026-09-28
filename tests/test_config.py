@@ -13,8 +13,6 @@ def test_default_config_values_do_not_require_openai_key() -> None:
     assert is_dataclass(AppConfig)
     assert config == AppConfig(
         pdf_dir=Path("data/pdfs"),
-        chroma_dir=Path("storage/chroma"),
-        collection_name="human_design",
         embedding_model="text-embedding-3-small",
         openai_api_key=None,
         chunk_size=800,
@@ -27,23 +25,33 @@ def test_path_environment_overrides() -> None:
     config = load_config(
         env={
             "HD_RAG_PDF_DIR": "custom/pdfs",
-            "HD_RAG_CHROMA_DIR": "custom/chroma",
+            "HD_RAG_INDEX_DIR": "custom/hybrid",
         }
     )
 
     assert config.pdf_dir == Path("custom/pdfs")
-    assert config.chroma_dir == Path("custom/chroma")
+    assert config.index_dir == Path("custom/hybrid")
 
 
-def test_name_and_model_environment_overrides() -> None:
+def test_retired_storage_settings_do_not_affect_hybrid_configuration(tmp_path: Path) -> None:
+    current = {"HD_RAG_INDEX_DIR": str(tmp_path / "hybrid")}
+    # Existing private .env files may still contain these retired settings.
+    # They must not select a collection or block the current index root.
+    retired = {
+        **current,
+        "HD_RAG_CHROMA_DIR": str(tmp_path / "hybrid"),
+        "HD_RAG_COLLECTION": "unused-old-collection",
+    }
+    assert load_config(env=retired) == load_config(env=current)
+
+
+def test_embedding_model_environment_override() -> None:
     config = load_config(
         env={
-            "HD_RAG_COLLECTION": "charts",
             "HD_RAG_EMBED_MODEL": "custom-embedding-model",
         }
     )
 
-    assert config.collection_name == "charts"
     assert config.embedding_model == "custom-embedding-model"
 
 
@@ -87,8 +95,7 @@ def test_load_config_can_read_explicit_env_file(tmp_path: Path) -> None:
         "\n".join(
             [
                 "HD_RAG_PDF_DIR=env-file/pdfs",
-                "HD_RAG_CHROMA_DIR=env-file/chroma",
-                "HD_RAG_COLLECTION=env_file_collection",
+                "HD_RAG_INDEX_DIR=env-file/hybrid",
                 "HD_RAG_EMBED_MODEL=env-file-model",
                 "OPENAI_API_KEY=env-file-api-key",
                 "HD_RAG_CHUNK_SIZE=900",
@@ -102,8 +109,7 @@ def test_load_config_can_read_explicit_env_file(tmp_path: Path) -> None:
     config = load_config(env={}, env_file=env_file)
 
     assert config.pdf_dir == Path("env-file/pdfs")
-    assert config.chroma_dir == Path("env-file/chroma")
-    assert config.collection_name == "env_file_collection"
+    assert config.index_dir == Path("env-file/hybrid")
     assert config.embedding_model == "env-file-model"
     assert config.openai_api_key == "env-file-api-key"
     assert config.chunk_size == 900
@@ -159,11 +165,9 @@ PHASE3_BOOLEAN_SETTINGS = (
 )
 
 
-def test_phase3_defaults_are_offline_and_keep_legacy_paths() -> None:
+def test_default_provider_settings_are_offline() -> None:
     config = load_config(env={})
     assert config.index_dir == Path("storage/hybrid_v1")
-    assert config.chroma_dir == Path("storage/chroma")
-    assert config.collection_name == "human_design"
     assert config.rerank_provider == "none"
     assert config.rerank_model is None
     assert config.generation_model is None

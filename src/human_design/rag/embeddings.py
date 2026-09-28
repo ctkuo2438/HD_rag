@@ -1,4 +1,4 @@
-"""Embedding model factory for the Phase 1 RAG pipeline."""
+"""Embedding model factory shared by hybrid indexing and dense retrieval."""
 
 from __future__ import annotations
 

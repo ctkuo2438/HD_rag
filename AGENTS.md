@@ -2,7 +2,7 @@
 
 ## Working approach
 
-- Inspect relevant code, tests, and documentation before making claims or changes. Use README.md and the plans in `docs/` for detailed project contracts.
+- Inspect relevant code, tests, and documentation before making claims or changes. Use README.md and `docs/` for current project contracts.
 - Follow the current user request. Do not treat outdated phase labels in older documents or skills as the current scope.
 - Prefer simple, robust, maintainable solutions. Avoid unnecessary dependencies, abstractions, and speculative features.
 - Make the smallest coherent change that solves the requested problem. Preserve existing user changes and report unrelated issues separately.

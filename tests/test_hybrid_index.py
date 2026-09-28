@@ -258,10 +258,27 @@ def build_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "page_label": str(i), "page_number": i,
     }) for i, text in enumerate(("Gate 42 completes cycles.", "Gate 1 expresses creativity."), 1)]
     config = replace(load_config(env={}), pdf_dir=pdf_dir, index_dir=tmp_path / "hybrid",
-                     chroma_dir=tmp_path / "legacy", real_embeddings=True, openai_api_key="fake-test-key")
+                     real_embeddings=True, openai_api_key="fake-test-key")
     monkeypatch.setattr(hybrid, "load_pdfs", lambda path: documents)
     monkeypatch.setattr(hybrid, "create_openai_embedding_model_from_config", lambda config: MockEmbedding(embed_dim=8))
     return config
+
+
+def test_existing_dotenv_legacy_settings_cannot_redirect_or_block_hybrid_index(build_setup, tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        f"HD_RAG_PDF_DIR={build_setup.pdf_dir}\n"
+        f"HD_RAG_INDEX_DIR={build_setup.index_dir}\n"
+        f"HD_RAG_CHROMA_DIR={build_setup.index_dir}\n"
+        "HD_RAG_COLLECTION=unused-old-collection\n"
+        "HD_RAG_REAL_EMBEDDINGS=1\nOPENAI_API_KEY=fake-test-key\n"
+    )
+    config = load_config(env={}, env_file=env_file)
+    manifest = build_hybrid_index(config)
+    assert manifest.collection_name == "human_design_hybrid_v1"
+    assert verify_hybrid_index(config) == manifest
+    assert (config.index_dir / "chroma").is_dir()
+    assert (config.index_dir / "bm25").is_dir()
 
 
 @pytest.mark.parametrize("include_blank_pages", [False, True])
@@ -302,7 +319,6 @@ def test_coordinated_build_shares_objects_ids_and_identity(
     for name in ("embedding_model", "ingestion_id", "schema_version", "ingestion_version", "corpus_fingerprint", "chunk_count"):
         assert collection.metadata[name] == getattr(manifest, name)
     assert verify_hybrid_index(config) == manifest
-    assert not config.chroma_dir.exists()
 
 
 def test_all_blank_pages_fail_before_embedding_or_storage(build_setup, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -349,7 +365,7 @@ def test_build_rejects_different_builder_nodes_or_identity(
         build_hybrid_index(build_setup)
 
 
-@pytest.mark.parametrize("mode", ["disabled", "no-key", "nonempty", "legacy"])
+@pytest.mark.parametrize("mode", ["disabled", "no-key", "nonempty"])
 def test_build_gates_precede_loading_and_provider_construction(
     build_setup, monkeypatch: pytest.MonkeyPatch, mode: str,
 ) -> None:
@@ -358,8 +374,6 @@ def test_build_gates_precede_loading_and_provider_construction(
         config = replace(config, real_embeddings=False)
     elif mode == "no-key":
         config = replace(config, openai_api_key=None)
-    elif mode == "legacy":
-        config = replace(config, index_dir=config.chroma_dir)
     else:
         config.index_dir.mkdir()
         (config.index_dir / "keep").write_text("untouched")
@@ -466,18 +480,18 @@ def test_real_local_dense_reload_never_modifies_vectors(build_setup, monkeypatch
     assert collection.get(include=["documents", "metadatas"]) == before
 
 
-def test_build_preserves_an_existing_legacy_collection(build_setup, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_preserves_an_unrelated_collection(build_setup, monkeypatch: pytest.MonkeyPatch) -> None:
     from human_design.rag.vector_store import create_chroma_client
     config = build_setup
-    legacy = create_chroma_client(config.chroma_dir).create_collection(config.collection_name)
-    legacy.add(ids=["legacy-only"], embeddings=[[0.1, 0.2]], documents=["Synthetic legacy marker"])
-    before = legacy.get(include=["documents", "metadatas"])
+    unrelated = create_chroma_client(config.index_dir.parent / "unrelated").create_collection("unrelated")
+    unrelated.add(ids=["unrelated-id"], embeddings=[[0.1, 0.2]], documents=["Synthetic unrelated marker"])
+    before = unrelated.get(include=["documents", "metadatas"])
     def restricted_client(path):
         assert path == config.index_dir / "chroma"
         return create_chroma_client(path)
     monkeypatch.setattr(hybrid, "create_chroma_client", restricted_client)
     build_hybrid_index(config)
-    assert legacy.get(include=["documents", "metadatas"]) == before
+    assert unrelated.get(include=["documents", "metadatas"]) == before
 
 
 def test_same_count_but_different_chroma_ids_fails_cross_index_check(build_setup) -> None:

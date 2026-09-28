@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from human_design.vision.constants import CANONICAL_CENTERS, PLANETARY_FIELDS
+from human_design.vision.evaluation import validate_evaluation_scope, validate_prediction
 from human_design.vision.interpreter import interpret_bodygraph
 from human_design.vision.models import (
     ValidationCode,
@@ -305,40 +306,6 @@ def _script_module():
     return module
 
 
-@pytest.fixture(params=["loader", "evaluator"])
-def check_scope(request, tmp_path):
-    def check(golden):
-        if request.param == "loader":
-            _script_module()._load_golden_cases(_write_golden_file(tmp_path, [golden]))
-        else:
-            _metric_module().evaluate_bodygraph_prediction(
-                case_id="case_001", golden=golden, prediction=_prediction(),
-            )
-
-    return check
-
-
-@pytest.fixture(params=["loader", "evaluator", "batch_evaluator"])
-def check_prediction(request, tmp_path):
-    def check(prediction, *, include_metrics=True):
-        if request.param == "loader":
-            path = _write_predictions_file(tmp_path, [{"case_id": "case_001", **prediction}])
-            return _script_module()._load_predictions(path)
-        golden = _golden_case(
-            include_raw_visual_metrics=include_metrics,
-            include_derived_metrics=include_metrics,
-        )
-        if request.param == "batch_evaluator":
-            return _metric_module().evaluate_bodygraph_predictions(
-                golden_cases=[golden], predictions={"case_001": prediction},
-            )
-        return _metric_module().evaluate_bodygraph_prediction(
-            case_id="case_001", golden=golden, prediction=prediction,
-        )
-
-    return check
-
-
 def _write_golden_file(tmp_path: Path, cases: list[dict[str, Any]]) -> Path:
     golden_path = tmp_path / "golden.json"
     golden_path.write_text(
@@ -368,6 +335,50 @@ def _write_predictions_file(
         )
     )
     return predictions_path
+
+
+@pytest.mark.parametrize("entrypoint", ["loader", "evaluator", "batch_evaluator"])
+@pytest.mark.parametrize("section", ["raw_vision", "derived_chart_data", "validation_result"])
+def test_prediction_validation_is_enforced_at_every_entrypoint(
+    tmp_path, entrypoint, section,
+) -> None:
+    prediction = _prediction()
+    prediction[section] = None
+    golden = _golden_case(include_raw_visual_metrics=False, include_derived_metrics=False)
+
+    with pytest.raises(ValueError, match=section):
+        if entrypoint == "loader":
+            path = _write_predictions_file(tmp_path, [{"case_id": "case_001", **prediction}])
+            _script_module()._load_predictions(path)
+        elif entrypoint == "evaluator":
+            _metric_module().evaluate_bodygraph_prediction(
+                case_id="case_001", golden=golden, prediction=prediction,
+            )
+        else:
+            # Even unmatched predictions must be validated, with metric families off.
+            _metric_module().evaluate_bodygraph_predictions(
+                golden_cases=[golden], predictions={"unmatched": prediction},
+            )
+
+
+@pytest.mark.parametrize("entrypoint", ["loader", "evaluator"])
+@pytest.mark.parametrize("invalid", ["scope_flag", "source_activation"])
+def test_scope_validation_is_enforced_at_every_entrypoint(tmp_path, entrypoint, invalid) -> None:
+    golden = _golden_case(include_raw_visual_metrics=False)
+    if invalid == "scope_flag":
+        golden["evaluation_scope"]["include_raw_visual_metrics"] = "false"
+        expected_error = "include_raw_visual_metrics"
+    else:
+        golden["expected_raw_labels"]["design"]["pluto"] = None
+        expected_error = "design.pluto"
+
+    with pytest.raises(ValueError, match=expected_error):
+        if entrypoint == "loader":
+            _script_module()._load_golden_cases(_write_golden_file(tmp_path, [golden]))
+        else:
+            _metric_module().evaluate_bodygraph_prediction(
+                case_id="case_001", golden=golden, prediction=_prediction(),
+            )
 
 
 def test_example_golden_labels_load_as_json() -> None:
@@ -1106,13 +1117,13 @@ def test_prediction_collection_presence_controls_credit(
 @pytest.mark.parametrize("section,labels,field,prefix", PREDICTION_COLLECTIONS)
 @pytest.mark.parametrize("value", [None, "", {}, 1, False])
 def test_malformed_prediction_collection_containers_are_rejected(
-    check_prediction, section, labels, field, prefix, value,
+    section, labels, field, prefix, value,
 ) -> None:
     prediction = _prediction()
     prediction[section][field] = value
 
     with pytest.raises(ValueError, match=rf"{section}\.{field}"):
-        check_prediction(prediction, include_metrics=False)
+        validate_prediction(prediction)
 
 
 @pytest.mark.parametrize("column", ["personality", "design"])
@@ -1125,12 +1136,12 @@ def test_malformed_prediction_collection_containers_are_rejected(
         {"gate": "61", "line": 4}, {"gate": 0, "line": 1}, {"gate": 64, "line": 7},
     ],
 )
-def test_malformed_prediction_activations_are_rejected(check_prediction, column, value) -> None:
+def test_malformed_prediction_activations_are_rejected(column, value) -> None:
     prediction = _prediction()
     prediction["raw_vision"][column]["sun"] = value
 
     with pytest.raises(ValueError, match=rf"raw_vision\.{column}\.sun"):
-        check_prediction(prediction, include_metrics=False)
+        validate_prediction(prediction)
 
 
 @pytest.mark.parametrize(
@@ -1153,13 +1164,13 @@ def test_malformed_prediction_activations_are_rejected(check_prediction, column,
         for value in (True, 1, None, {}, [], "invalid")
     ],
 )
-def test_malformed_prediction_set_elements_are_rejected(check_prediction, path, value) -> None:
+def test_malformed_prediction_set_elements_are_rejected(path, value) -> None:
     section, field = path.split(".")
     prediction = _prediction()
     prediction[section][field] = [value]
 
     with pytest.raises(ValueError, match=rf"{section}\.{field}\[0\]"):
-        check_prediction(prediction, include_metrics=False)
+        validate_prediction(prediction)
 
 
 @pytest.mark.parametrize(
@@ -1170,7 +1181,7 @@ def test_malformed_prediction_set_elements_are_rejected(check_prediction, path, 
     ],
 )
 @pytest.mark.parametrize("value", [None, 0, 1, True, False, "false", []])
-def test_malformed_prediction_objects_are_rejected(check_prediction, path, value) -> None:
+def test_malformed_prediction_objects_are_rejected(path, value) -> None:
     prediction = _prediction()
     parts = path.split(".")
     parent = prediction
@@ -1179,26 +1190,26 @@ def test_malformed_prediction_objects_are_rejected(check_prediction, path, value
     parent[parts[-1]] = value
 
     with pytest.raises(ValueError, match=path.replace(".", r"\.")):
-        check_prediction(prediction, include_metrics=False)
+        validate_prediction(prediction)
 
 
 @pytest.mark.parametrize("field", BASIC_INFO_FIELDS)
 @pytest.mark.parametrize("value", [None, 0, 1, True, False, [], {}])
-def test_malformed_basic_info_scalars_are_rejected(check_prediction, field, value) -> None:
+def test_malformed_basic_info_scalars_are_rejected(field, value) -> None:
     prediction = _prediction()
     prediction["derived_chart_data"]["basic_info"][field] = value
 
     with pytest.raises(ValueError, match=rf"derived_chart_data\.basic_info\.{field}"):
-        check_prediction(prediction, include_metrics=False)
+        validate_prediction(prediction)
 
 
 @pytest.mark.parametrize("value", [None, 0, 1, "true", "false", [], {}])
-def test_predicted_validity_requires_a_real_boolean(check_prediction, value) -> None:
+def test_predicted_validity_requires_a_real_boolean(value) -> None:
     prediction = _prediction()
     prediction["validation_result"]["is_valid"] = value
 
     with pytest.raises(ValueError, match=r"validation_result\.is_valid"):
-        check_prediction(prediction, include_metrics=False)
+        validate_prediction(prediction)
 
 
 @pytest.mark.parametrize(
@@ -1218,11 +1229,11 @@ def test_partial_prediction_entries_still_require_identity_and_supported_keys(tm
 
 
 @pytest.mark.parametrize("value", [None, "1.1", "64.6", " 61.4 ", {"gate": 61, "line": 4}])
-def test_valid_prediction_activations_are_accepted(check_prediction, value) -> None:
+def test_valid_prediction_activations_are_accepted(value) -> None:
     prediction = _prediction()
     prediction["raw_vision"]["personality"]["sun"] = value
 
-    check_prediction(prediction)
+    validate_prediction(prediction)
 
 
 @pytest.mark.parametrize("value", [None, False, [], "missing"])
@@ -1862,12 +1873,12 @@ def test_prediction_loader_rejects_duplicate_case_ids(tmp_path) -> None:
 @pytest.mark.parametrize(
     "value", [0, 1, -1, 0.0, 1.0, "true", "false", "", None, [], {}, ["truthy"]],
 )
-def test_scope_flags_require_strict_booleans(check_scope, flag, value) -> None:
+def test_scope_flags_require_strict_booleans(flag, value) -> None:
     golden_case = _golden_case()
     golden_case["evaluation_scope"][flag] = value
 
     with pytest.raises(ValueError, match=f"{flag} must be a bool"):
-        check_scope(golden_case)
+        validate_evaluation_scope(golden_case)
 
 
 @pytest.mark.parametrize(
@@ -1879,7 +1890,7 @@ def test_scope_flags_require_strict_booleans(check_scope, flag, value) -> None:
         {"include_raw_visual_metrics": True, "include_derived_metrics": True, "extra": False},
     ],
 )
-def test_scope_must_be_explicit_and_complete(check_scope, scope) -> None:
+def test_scope_must_be_explicit_and_complete(scope) -> None:
     golden = _golden_case()
     if scope == "missing":
         del golden["evaluation_scope"]
@@ -1887,20 +1898,20 @@ def test_scope_must_be_explicit_and_complete(check_scope, scope) -> None:
         golden["evaluation_scope"] = scope
 
     with pytest.raises(ValueError, match="evaluation_scope"):
-        check_scope(golden)
+        validate_evaluation_scope(golden)
 
 
 @pytest.mark.parametrize("include_raw", [False, True])
 @pytest.mark.parametrize("column", ["personality", "design"])
 @pytest.mark.parametrize("field", PLANETARY_FIELDS)
 def test_derived_scope_requires_every_source_activation(
-    check_scope, include_raw, column, field,
+    include_raw, column, field,
 ) -> None:
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     golden["expected_raw_labels"][column][field] = None
 
     with pytest.raises(ValueError, match=f"{column}.{field}"):
-        check_scope(golden)
+        validate_evaluation_scope(golden)
 
 
 @pytest.mark.parametrize("include_raw", [False, True])
@@ -1916,13 +1927,13 @@ def test_derived_scope_requires_every_source_activation(
     ],
 )
 def test_derived_scope_rejects_invalid_source_activations(
-    check_scope, include_raw, activation,
+    include_raw, activation,
 ) -> None:
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     golden["expected_raw_labels"]["design"]["pluto"] = activation
 
     with pytest.raises(ValueError, match="design.pluto"):
-        check_scope(golden)
+        validate_evaluation_scope(golden)
 
 
 @pytest.mark.parametrize("include_raw", [False, True])
@@ -1930,13 +1941,13 @@ def test_derived_scope_rejects_invalid_source_activations(
     "activation", ["1.1", "64.6", " 61.4 ", {"gate": 1, "line": 1}, {"gate": 64, "line": 6}],
 )
 def test_derived_scope_accepts_valid_source_activation_representations(
-    check_scope, include_raw, activation,
+    include_raw, activation,
 ) -> None:
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     for column in ("personality", "design"):
         golden["expected_raw_labels"][column] = dict.fromkeys(PLANETARY_FIELDS, activation)
 
-    check_scope(golden)
+    validate_evaluation_scope(golden)
 
 
 @pytest.mark.parametrize(
@@ -1953,7 +1964,7 @@ def test_derived_scope_accepts_valid_source_activation_representations(
         "expected_derived_labels.basic_info.profile",
     ],
 )
-def test_scope_rejects_missing_required_label_fields(check_scope, path) -> None:
+def test_scope_rejects_missing_required_label_fields(path) -> None:
     golden = _golden_case()
     parts = path.split(".")
     parent = golden
@@ -1962,26 +1973,26 @@ def test_scope_rejects_missing_required_label_fields(check_scope, path) -> None:
     del parent[parts[-1]]
 
     with pytest.raises(ValueError, match=parts[0]):
-        check_scope(golden)
+        validate_evaluation_scope(golden)
 
 
-def test_disabled_derived_scope_requires_explicit_null_labels(check_scope) -> None:
+def test_disabled_derived_scope_requires_explicit_null_labels() -> None:
     golden = _golden_case(include_derived_metrics=False)
     del golden["expected_derived_labels"]
 
     with pytest.raises(ValueError, match="expected_derived_labels"):
-        check_scope(golden)
+        validate_evaluation_scope(golden)
 
 
 @pytest.mark.parametrize("include_raw", [False, True])
-def test_scope_accepts_all_null_sources_without_derived_metrics(check_scope, include_raw) -> None:
+def test_scope_accepts_all_null_sources_without_derived_metrics(include_raw) -> None:
     golden = _golden_case(
         include_raw_visual_metrics=include_raw, include_derived_metrics=False,
     )
     for column in ("personality", "design"):
         golden["expected_raw_labels"][column] = dict.fromkeys(PLANETARY_FIELDS)
 
-    check_scope(golden)
+    validate_evaluation_scope(golden)
 
 
 @pytest.mark.parametrize("invalid_input", ["raw_flag", "derived_flag", "activation"])
@@ -2015,7 +2026,6 @@ def test_invalid_scope_or_eligibility_is_a_cli_input_error(tmp_path, capsys, inv
     ],
 )
 def test_scope_and_derived_labels_must_agree(
-    check_scope,
     include_derived_metrics: bool,
     expected_derived_labels: object,
 ) -> None:
@@ -2029,7 +2039,7 @@ def test_scope_and_derived_labels_must_agree(
         match="include_derived_metrics.*expected_derived_labels|"
         "expected_derived_labels.*include_derived_metrics",
     ):
-        check_scope(golden_case)
+        validate_evaluation_scope(golden_case)
 
 
 def test_golden_loader_accepts_warning_entries_with_field_path(tmp_path) -> None:
