@@ -15,7 +15,7 @@ Requires Docker with Compose (Docker Desktop includes both) and your own OpenAI 
 
 ### 1. Download the starter archive and fill in your key
 
-Download `hd-rag-starter-0.1.0.tar.gz` from the project's GitHub Release and extract it into a folder. It contains only:
+Download [hd-rag-starter-0.1.0.tar.gz](https://github.com/ctkuo2438/HD_rag/releases/download/v0.1.0/hd-rag-starter-0.1.0.tar.gz) from the [v0.1.0 release](https://github.com/ctkuo2438/HD_rag/releases/tag/v0.1.0) and extract it into a folder. It contains only:
 
 ```text
 compose.yaml
