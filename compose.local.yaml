@@ -1,0 +1,37 @@
+services:
+  app:
+    build:
+      context: .
+      target: app
+    image: hd-rag:local
+    init: true
+    ports:
+      - "127.0.0.1:8501:8501"
+    # Compose reads .env; explicit shell values take precedence.
+    # Only application settings are passed through, never the whole host environment.
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
+      HD_RAG_EMBED_MODEL: ${HD_RAG_EMBED_MODEL:-text-embedding-3-small}
+      HD_RAG_INDEX_DIR: /app/storage/hybrid_v1
+      HD_RAG_DENSE_TOP_K: ${HD_RAG_DENSE_TOP_K:-20}
+      HD_RAG_SPARSE_TOP_K: ${HD_RAG_SPARSE_TOP_K:-20}
+      HD_RAG_FUSION_TOP_K: ${HD_RAG_FUSION_TOP_K:-20}
+      HD_RAG_FINAL_TOP_K: ${HD_RAG_FINAL_TOP_K:-4}
+      HD_RAG_RRF_K: ${HD_RAG_RRF_K:-60}
+      HD_RAG_RERANK_PROVIDER: ${HD_RAG_RERANK_PROVIDER:-none}
+      HD_RAG_RERANK_MODEL: ${HD_RAG_RERANK_MODEL:-}
+      HD_RAG_REAL_RERANK_API: ${HD_RAG_REAL_RERANK_API:-0}
+      HD_RAG_GENERATION_MODEL: ${HD_RAG_GENERATION_MODEL:-}
+      HD_RAG_REAL_GENERATION: ${HD_RAG_REAL_GENERATION:-0}
+      HD_RAG_REAL_EMBEDDINGS: ${HD_RAG_REAL_EMBEDDINGS:-0}
+      HD_VISION_MODEL: ${HD_VISION_MODEL:-gpt-5.5}
+      HD_VISION_REASONING_EFFORT: ${HD_VISION_REASONING_EFFORT:-high}
+      HD_VISION_REAL_API: ${HD_VISION_REAL_API:-0}
+    volumes:
+      # Keep all four index artifacts together. A typo must not create an empty index.
+      - type: bind
+        source: ${HD_RAG_INDEX_DIR:-./storage/hybrid_v1}
+        target: /app/storage/hybrid_v1
+        bind:
+          create_host_path: false

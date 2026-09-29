@@ -585,4 +585,4 @@ During Phase 2, do not add:
 - annotation UI libraries
 - cloud SDKs
 
-Only add a dependency when the active Phase 2 task explicitly requires it and the dependency is consistent with `AGENTS.md` and `docs/phase2_implementation_plan.md`.
+Only add a dependency when the active Phase 2 task explicitly requires it and the dependency is consistent with `AGENTS.md` and `docs/development.md`.

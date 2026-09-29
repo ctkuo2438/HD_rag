@@ -1,0 +1,17 @@
+# Send only application code and build inputs to Docker.
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/**
+!scripts/
+!scripts/*.py
+!.streamlit/
+!.streamlit/config.toml
+
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store
+**/.env*

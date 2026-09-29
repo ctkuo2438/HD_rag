@@ -1,0 +1,29 @@
+services:
+  app:
+    image: ${HD_RAG_IMAGE:-ghcr.io/ctkuo2438/hd-rag:0.1.0}
+    init: true
+    ports:
+      - "127.0.0.1:8501:8501"
+    # Compose reads .env; explicit shell values take precedence.
+    # Only application settings are passed through, never the whole host environment.
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
+      HD_RAG_EMBED_MODEL: ${HD_RAG_EMBED_MODEL:-text-embedding-3-small}
+      HD_RAG_INDEX_DIR: /app/storage/hybrid_v1
+      HD_RAG_DENSE_TOP_K: ${HD_RAG_DENSE_TOP_K:-20}
+      HD_RAG_SPARSE_TOP_K: ${HD_RAG_SPARSE_TOP_K:-20}
+      HD_RAG_FUSION_TOP_K: ${HD_RAG_FUSION_TOP_K:-20}
+      HD_RAG_FINAL_TOP_K: ${HD_RAG_FINAL_TOP_K:-4}
+      HD_RAG_RRF_K: ${HD_RAG_RRF_K:-60}
+      HD_RAG_RERANK_PROVIDER: ${HD_RAG_RERANK_PROVIDER:-none}
+      HD_RAG_RERANK_MODEL: ${HD_RAG_RERANK_MODEL:-rerank-v4.0-pro}
+      HD_RAG_REAL_RERANK_API: ${HD_RAG_REAL_RERANK_API:-0}
+      HD_RAG_GENERATION_MODEL: ${HD_RAG_GENERATION_MODEL:-gpt-5.6-terra}
+      # This consumer launcher opts into paid questions. Page load makes no API calls.
+      # Explicit process values of 0 still override these defaults for offline checks.
+      HD_RAG_REAL_GENERATION: ${HD_RAG_REAL_GENERATION:-1}
+      HD_RAG_REAL_EMBEDDINGS: ${HD_RAG_REAL_EMBEDDINGS:-1}
+      HD_VISION_MODEL: ${HD_VISION_MODEL:-gpt-5.5}
+      HD_VISION_REASONING_EFFORT: ${HD_VISION_REASONING_EFFORT:-high}
+      HD_VISION_REAL_API: ${HD_VISION_REAL_API:-1}
