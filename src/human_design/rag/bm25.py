@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from llama_index.core.schema import BaseNode, MetadataMode
 from llama_index.core.vector_stores.utils import metadata_dict_to_node
@@ -14,6 +16,7 @@ from llama_index.retrievers.bm25 import BM25Retriever
 from human_design.rag.hybrid_index import (
     HybridIndexError,
     canonical_json,
+    chunk_source_fields,
     require_empty_directory,
     safe_source_metadata,
     validate_canonical_nodes,
@@ -131,15 +134,22 @@ def normalize_sparse_query(query: str) -> str:
     return result
 
 
+def _corpus(retriever: BM25Retriever) -> list[dict[str, Any]]:
+    if retriever.corpus is None:
+        raise HybridIndexError("BM25 index has no stored corpus")
+    return retriever.corpus
+
+
 def _corpus_nodes(retriever: BM25Retriever) -> list[BaseNode]:
-    nodes = [metadata_dict_to_node(row) for row in retriever.corpus]
+    corpus = _corpus(retriever)
+    nodes = [metadata_dict_to_node(row) for row in corpus]
     validate_canonical_nodes(nodes)
-    if any(row["node_id"] != node.node_id for row, node in zip(retriever.corpus, nodes, strict=True)):
+    if any(row["node_id"] != node.node_id for row, node in zip(corpus, nodes, strict=True)):
         raise HybridIndexError("BM25 corpus node identity mismatch")
     return nodes
 
 
-def build_and_persist_bm25(nodes: list[BaseNode], persist_dir: Path, ingestion_id: str) -> None:
+def build_and_persist_bm25(nodes: Sequence[BaseNode], persist_dir: Path, ingestion_id: str) -> None:
     validate_canonical_nodes(nodes)
     require_empty_directory(persist_dir)
     if not nodes or not isinstance(ingestion_id, str) or not ingestion_id.strip():
@@ -154,7 +164,7 @@ def build_and_persist_bm25(nodes: list[BaseNode], persist_dir: Path, ingestion_i
             node.excluded_llm_metadata_keys.append("ingestion_id")
     try:
         retriever = BM25Retriever.from_defaults(
-            nodes=nodes,
+            nodes=list(nodes),
             similarity_top_k=min(2, len(nodes)),
             token_pattern=_TOKEN_PATTERN,
             verbose=False,
@@ -218,7 +228,7 @@ class BM25RetrieverAdapter:
             return []
         previous = self._retriever.similarity_top_k
         try:
-            self._retriever.similarity_top_k = min(top_k, len(self._retriever.corpus))
+            self._retriever.similarity_top_k = min(top_k, len(_corpus(self._retriever)))
             matches = self._retriever.retrieve(normalized)
         finally:
             self._retriever.similarity_top_k = previous
@@ -231,11 +241,7 @@ class BM25RetrieverAdapter:
                 RetrievedChunk(
                     chunk_id=match.node.node_id,
                     text=match.node.get_content(metadata_mode=MetadataMode.NONE),
-                    source_file=metadata["source_file"],
-                    source_relpath=metadata.get("source_relpath"),
-                    document_title=metadata.get("document_title"),
-                    page_label=metadata.get("page_label"),
-                    page_number=metadata.get("page_number"),
+                    **chunk_source_fields(metadata),
                     sparse_rank=rank,
                     sparse_score=match.score,
                     metadata=metadata,

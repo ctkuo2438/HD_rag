@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 
 JsonScalar: TypeAlias = str | int | float | bool | None
@@ -167,7 +167,7 @@ def _validate_relative_source(value: str, name: str, *, basename: bool = False) 
 def _copy_json_value(value: object) -> JsonValue:
     """Validate and detach JSON metadata without lossy string/default conversions."""
     if value is None or type(value) in (str, int, bool):
-        return value
+        return cast(JsonValue, value)  # type() above allows only exact JSON scalars
     if type(value) is float:
         if not math.isfinite(value):
             raise ValueError("metadata numbers must be finite")

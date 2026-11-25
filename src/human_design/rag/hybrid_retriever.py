@@ -12,7 +12,8 @@ from human_design.rag.models import HybridRetrievalResult, HybridSearchRequest, 
 
 
 class Retriever(Protocol):
-    ingestion_id: str
+    @property
+    def ingestion_id(self) -> str: ...
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievedChunk]: ...
 
@@ -75,21 +76,18 @@ def fuse_rrf(
             candidate = _safe_candidate(chunk, backend)
             existing = merged.get(candidate.chunk_id)
             merged[candidate.chunk_id] = _merge(existing, candidate) if existing else candidate
-    fused = [
-        replace(
-            chunk,
-            rrf_score=sum(1 / (rrf_k + rank) for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None),
-        )
+    scored = [
+        (sum(1 / (rrf_k + rank) for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None), chunk)
         for chunk in merged.values()
     ]
-    fused.sort(
-        key=lambda chunk: (
-            -chunk.rrf_score,
-            min(rank for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None),
-            chunk.chunk_id,
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            min(rank for rank in (item[1].dense_rank, item[1].sparse_rank) if rank is not None),
+            item[1].chunk_id,
         )
     )
-    return tuple(fused[:fusion_top_k])
+    return tuple(replace(chunk, rrf_score=score) for score, chunk in scored[:fusion_top_k])
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 from llama_index.core import VectorStoreIndex
 from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -22,7 +23,7 @@ class DenseRetrieverAdapter:
     ingestion_id: str
 
     def retrieve(self, query: str, top_k: int) -> list[RetrievedChunk]:
-        from human_design.rag.hybrid_index import HybridIndexError, safe_source_metadata
+        from human_design.rag.hybrid_index import HybridIndexError, chunk_source_fields, safe_source_metadata
 
         if type(top_k) is not int or top_k <= 0:
             raise ValueError("top_k must be a positive integer")
@@ -45,11 +46,7 @@ class DenseRetrieverAdapter:
                 RetrievedChunk(
                     chunk_id=match.node.node_id,
                     text=match.node.get_content(metadata_mode=MetadataMode.NONE),
-                    source_file=metadata["source_file"],
-                    source_relpath=metadata.get("source_relpath"),
-                    document_title=metadata.get("document_title"),
-                    page_label=metadata.get("page_label"),
-                    page_number=metadata.get("page_number"),
+                    **chunk_source_fields(metadata),
                     dense_rank=rank,
                     dense_score=match.score,
                     metadata=metadata,
@@ -66,4 +63,7 @@ def load_dense_retriever(config: AppConfig, *, embed_model: BaseEmbedding | None
     vector_store, manifest = open_phase3_chroma(config)
     embedding = embed_model if embed_model is not None else create_openai_embedding_model_from_config(config)
     index = VectorStoreIndex.from_vector_store(vector_store=vector_store, embed_model=embedding)
-    return DenseRetrieverAdapter(index.as_retriever(similarity_top_k=config.dense_top_k), manifest.ingestion_id)
+    # VectorStoreIndex.as_retriever is annotated as BaseRetriever but returns a
+    # VectorIndexRetriever, whose similarity_top_k the adapter adjusts per query.
+    retriever = cast(VectorIndexRetriever, index.as_retriever(similarity_top_k=config.dense_top_k))
+    return DenseRetrieverAdapter(retriever, manifest.ingestion_id)

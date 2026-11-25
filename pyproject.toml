@@ -30,9 +30,18 @@ packages = ["src/human_design"]
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.414",
     "pytest>=9.0.3",
     "ruff>=0.15.16",
 ]
+
+[tool.pyright]
+# Tests pass wrong types on purpose to exercise runtime validation, so only
+# production code is type checked.
+include = ["src", "scripts"]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 line-length = 120

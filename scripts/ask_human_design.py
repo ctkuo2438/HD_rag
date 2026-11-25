@@ -9,6 +9,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import NoReturn
 
 from human_design.rag.hybrid_index import HybridIndexError
 from human_design.reading import ChartImageQuestionRequest, KnowledgeQuestionRequest, ReadingPipeline
@@ -18,7 +19,7 @@ from human_design.reading.query_builder import InvalidQuestionError
 
 
 class _SafeArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         # argparse's default error includes raw argument values and local paths.
         self.exit(2, "Invalid arguments. Use --help for the supported interface.\n")
 

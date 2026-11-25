@@ -214,7 +214,9 @@ def generate_answer(
         try:
             from openai import OpenAI
 
-            client = OpenAI(api_key=config.openai_api_key, max_retries=0)
+            # The SDK client provides the responses.create/close subset this module uses;
+            # its overloaded create() signature is wider than the local protocol.
+            client = cast(_Client, OpenAI(api_key=config.openai_api_key, max_retries=0))
         except Exception:
             raise GenerationError(
                 "Unable to initialize the generation provider", code="provider_initialization"

@@ -10,7 +10,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any
+from typing import Any, cast
 
 from llama_index.core import StorageContext, VectorStoreIndex
 from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -225,7 +225,7 @@ def create_manifest(
 ) -> HybridManifest:
     validate_canonical_nodes(nodes)
     _validate_sources(sources)
-    payload = dict(
+    payload: dict[str, Any] = dict(
         schema_version=SCHEMA_VERSION,
         ingestion_version=config.ingestion_version,
         corpus_fingerprint=_corpus_fingerprint(nodes, sources),
@@ -396,8 +396,16 @@ def safe_source_metadata(metadata: Mapping[str, object]) -> dict[str, JsonValue]
                 if _PATH_IN_TEXT.search(value):
                     continue
             if value is not None:
-                result[name] = value
+                result[name] = cast(JsonValue, value)  # type() above allows only JSON scalars
     return result
+
+
+def chunk_source_fields(metadata: Mapping[str, JsonValue]) -> dict[str, Any]:
+    """RetrievedChunk source arguments from safe metadata; RetrievedChunk validates their types."""
+    return {
+        "source_file": metadata["source_file"],
+        **{name: metadata.get(name) for name in ("source_relpath", "document_title", "page_label", "page_number")},
+    }
 
 
 def require_real_embeddings(config: AppConfig) -> None:
@@ -421,7 +429,7 @@ def _dense_metadata(nodes: Sequence[BaseNode], manifest: HybridManifest) -> dict
 
 
 def build_phase3_chroma(
-    nodes: list[BaseNode],
+    nodes: Sequence[BaseNode],
     config: AppConfig,
     manifest: HybridManifest,
     embed_model: BaseEmbedding,

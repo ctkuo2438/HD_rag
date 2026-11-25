@@ -234,7 +234,8 @@ def evaluate_bodygraph_prediction(
             metrics.update(
                 warning_code_metrics(
                     _tuple(expected_validation["warnings"]),
-                    predicted_validation["warnings"],
+                    # validate_prediction already requires a list or tuple here.
+                    _tuple(predicted_validation["warnings"]),
                 )
             )
 
@@ -471,12 +472,14 @@ def _labeled_set_metrics(
         expected_values = _collection(expected, field_name)
         if expected_values is None:
             continue  # unlabeled: not scored
-        if field_name not in predicted:
+        # validate_prediction already requires a collection for each supplied field.
+        predicted_values = _collection(predicted, field_name)
+        if predicted_values is None:
             precision, recall, f1 = 0.0, 0.0, 0.0
         else:
             precision, recall, f1 = precision_recall_f1(
                 (normalize(value) for value in expected_values),
-                (normalize(value) for value in predicted[field_name]),
+                (normalize(value) for value in predicted_values),
             )
         metrics[f"{prefix}_precision"] = precision
         metrics[f"{prefix}_recall"] = recall
