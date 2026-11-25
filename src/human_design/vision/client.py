@@ -24,7 +24,9 @@ _SUPPORTED_IMAGE_TYPES = frozenset(
 
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _API_TIMEOUT_SECONDS = 300.0
-_API_MAX_RETRIES = 2
+# One paid request per extraction, matching answer generation. Each SDK retry is
+# another billed request, and a timed-out request may already have been processed.
+_API_MAX_RETRIES = 0
 
 
 def load_mock_response(path: Path) -> str:

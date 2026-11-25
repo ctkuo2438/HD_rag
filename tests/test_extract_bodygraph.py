@@ -111,10 +111,11 @@ def test_real_client_passes_model_and_reasoning_effort_separately(
     class FakeOpenAI:
         def __init__(self, *, api_key: str, timeout: float, max_retries: int) -> None:
             # Keyword-only, no defaults: the client must explicitly pass a
-            # finite timeout and bounded retries instead of SDK defaults.
+            # finite timeout and disable SDK retries, so one extraction makes
+            # at most one paid request.
             assert api_key == "offline-fake-key"
             assert timeout > 0
-            assert max_retries >= 0
+            assert max_retries == 0
             self.responses = FakeResponses()
 
     monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
