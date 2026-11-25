@@ -227,7 +227,7 @@ def test_phase3_rejects_invalid_numbers(
 
 
 def test_final_top_k_cannot_exceed_fusion_top_k() -> None:
-    with pytest.raises(ValueError, match="HD_RAG_FINAL_TOP_K.*HD_RAG_FUSION_TOP_K"):
+    with pytest.raises(ValueError, match=r"HD_RAG_FINAL_TOP_K.*HD_RAG_FUSION_TOP_K"):
         load_config(env={"HD_RAG_FINAL_TOP_K": "21"})
 
 

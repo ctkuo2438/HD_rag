@@ -81,7 +81,7 @@ def test_mock_client_returns_json_without_api_key() -> None:
 
 
 def test_client_requires_mock_or_explicit_real_api() -> None:
-    with pytest.raises(VisionClientError, match="HD_VISION_REAL_API=1|mock response"):
+    with pytest.raises(VisionClientError, match=r"HD_VISION_REAL_API=1|mock response"):
         extract_bodygraph_raw_json(
             image_path=IMAGE_PATH,
             config=_config(real_api_enabled=False),

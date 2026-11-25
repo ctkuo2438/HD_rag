@@ -157,7 +157,7 @@ def _activation_matches(
     )
 
 
-def _select_facts(query: str, normalized: str, context: ChartContext) -> tuple[ChartFact, ...]:
+def _select_facts(query: str, normalized: str, context: ChartContext) -> tuple[ChartFact, ...]:  # noqa: C901
     gates, channel_terms, gate_lines = _entities(normalized)
     channels = channel_terms & set(ALL_CHANNELS)
     endpoints = {int(g) for c in channels for g in c.split("-")}

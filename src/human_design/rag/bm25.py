@@ -45,12 +45,18 @@ _ALIASES = (
     ("Throat", ("喉嚨中心", "喉咙中心", "Throat Center")),
     (
         _G_CENTER,
-        tuple(alias for alias, center in CENTER_ALIASES.items() if center == _G_CENTER) + ("G中心", "自我中心"),
+        (*(alias for alias, center in CENTER_ALIASES.items() if center == _G_CENTER), "G中心", "自我中心"),
     ),
     (
         _EGO_CENTER,
-        tuple(alias for alias, center in CENTER_ALIASES.items() if center == _EGO_CENTER)
-        + ("意志力中心", "心臟中心", "心脏中心", "Heart Center", "Ego Center"),
+        (
+            *(alias for alias, center in CENTER_ALIASES.items() if center == _EGO_CENTER),
+            "意志力中心",
+            "心臟中心",
+            "心脏中心",
+            "Heart Center",
+            "Ego Center",
+        ),
     ),
     ("Sacral", ("薦骨中心", "荐骨中心", "Sacral Center")),
     ("Solar Plexus", ("情緒中心", "情绪中心", "Solar Plexus Center")),

@@ -339,7 +339,7 @@ def test_source_relpath_must_be_safe_relative_provenance(path: str) -> None:
 
 def test_prompt_source_rejects_internal_absolute_metadata() -> None:
     chunk = _chunk(metadata={"local": {"source_path": "/private/reference.pdf"}})
-    with pytest.raises(ValueError, match="absolute|path"):
+    with pytest.raises(ValueError, match=r"absolute|path"):
         PromptSource(citation_id="S1", chunk=chunk)
 
 

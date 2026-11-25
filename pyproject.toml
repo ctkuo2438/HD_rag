@@ -36,3 +36,37 @@ dev = [
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+extend-select = [
+    "B",      # likely bugs
+    "C90",    # function complexity
+    "RUF",    # Ruff-specific checks
+    "SIM",    # simpler equivalents
+    "T20",    # print outside CLIs
+    "TID251", # banned imports below
+    "UP",     # modern syntax for the supported Python
+]
+# The UI and docs are bilingual, so full-width punctuation is intentional.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+# CLIs and tests own printing, argument parsing, the UI and direct provider use.
+"scripts/**" = ["T20", "TID251"]
+"tests/**" = ["T20", "TID251"]
+# Provider boundaries: the only core modules that may import provider SDKs.
+"src/human_design/rag/embeddings.py" = ["TID251"]
+"src/human_design/rag/reranker.py" = ["TID251"]
+"src/human_design/reading/generator.py" = ["TID251"]
+"src/human_design/vision/client.py" = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"argparse".msg = "Argument parsing belongs in scripts/."
+"streamlit".msg = "Core code must not depend on the UI; keep Streamlit in scripts/."
+"openai".msg = "Import the OpenAI SDK only in a provider boundary module."
+"cohere".msg = "Import the Cohere SDK only in rag/reranker.py."
+"llama_index.embeddings.openai".msg = "Create OpenAI embeddings only in rag/embeddings.py."
+"dotenv.load_dotenv".msg = "load_dotenv writes .env values into os.environ; read them with dotenv_values."

@@ -69,7 +69,7 @@ def test_dense_loader_gates_before_provider_or_storage(
     monkeypatch.setattr(
         retriever, "create_openai_embedding_model_from_config", lambda config: pytest.fail("no provider")
     )
-    with pytest.raises(ValueError, match="HD_RAG_REAL_EMBEDDINGS|OPENAI_API_KEY|manifest"):
+    with pytest.raises(ValueError, match=r"HD_RAG_REAL_EMBEDDINGS|OPENAI_API_KEY|manifest"):
         load_dense_retriever(config)
     assert not config.index_dir.exists()
 

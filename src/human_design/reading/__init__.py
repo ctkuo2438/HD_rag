@@ -8,8 +8,8 @@ from human_design.reading.models import (
 from human_design.reading.pipeline import ReadingPipeline
 
 __all__ = [
-    "ReadingPipeline",
-    "KnowledgeQuestionRequest",
     "ChartImageQuestionRequest",
     "ChartQuestionRequest",
+    "KnowledgeQuestionRequest",
+    "ReadingPipeline",
 ]

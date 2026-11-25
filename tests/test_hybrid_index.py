@@ -212,7 +212,7 @@ def test_duplicate_ids_fail_before_persistence(tmp_path: Path) -> None:
 def test_malformed_jsonl_is_safe(tmp_path: Path, content: str) -> None:
     path = tmp_path / "nodes.jsonl"
     path.write_text(content)
-    with pytest.raises(hybrid.HybridIndexError, match="nodes.jsonl") as exc:
+    with pytest.raises(hybrid.HybridIndexError, match=r"nodes.jsonl") as exc:
         hybrid.load_nodes(path)
     assert str(tmp_path) not in str(exc.value)
 
@@ -435,7 +435,7 @@ def test_build_rejects_different_builder_nodes_or_identity(
             return real(nodes, directory, ingestion_id)
 
         monkeypatch.setattr(bm25, "build_and_persist_bm25", changed)
-    with pytest.raises(hybrid.HybridIndexError, match="identity|count|manifest"):
+    with pytest.raises(hybrid.HybridIndexError, match=r"identity|count|manifest"):
         build_hybrid_index(build_setup)
 
 
@@ -484,7 +484,7 @@ def test_post_build_verification_detects_missing_index_content(build_setup, arti
         payload = json.loads(path.read_text())
         payload["chunk_count"] += 1
         path.write_text(json.dumps(payload))
-    with pytest.raises(hybrid.HybridIndexError, match="count|identity"):
+    with pytest.raises(hybrid.HybridIndexError, match=r"count|identity"):
         verify_hybrid_index(config)
 
 
@@ -502,7 +502,7 @@ def test_build_script_gates_without_touching_storage(build_setup, monkeypatch: p
     config = replace(build_setup, **({"real_embeddings": False} if mode == "disabled" else {"openai_api_key": None}))
     monkeypatch.setattr(script, "load_config", lambda: config)
     monkeypatch.setattr(script, "build_hybrid_index", lambda config: pytest.fail("build must not run"))
-    with pytest.raises(SystemExit, match="HD_RAG_REAL_EMBEDDINGS|OPENAI_API_KEY"):
+    with pytest.raises(SystemExit, match=r"HD_RAG_REAL_EMBEDDINGS|OPENAI_API_KEY"):
         script.main([])
     assert not config.index_dir.exists()
 

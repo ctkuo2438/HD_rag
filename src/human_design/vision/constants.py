@@ -137,11 +137,11 @@ MOTOR_CENTERS: frozenset[str] = frozenset({"Root", "Sacral", "Solar Plexus", "Eg
 UNRESOLVED_BASIC_INFO_VALUES: frozenset[str] = frozenset({"Needs Review", "Unknown"})
 
 __all__ = [
-    "PLANETARY_FIELDS",
+    "ALL_CHANNELS",
     "CANONICAL_CENTERS",
     "CENTER_ALIASES",
-    "ALL_CHANNELS",
     "CHANNEL_TO_CENTERS",
     "MOTOR_CENTERS",
+    "PLANETARY_FIELDS",
     "UNRESOLVED_BASIC_INFO_VALUES",
 ]

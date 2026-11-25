@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import math
@@ -567,10 +568,8 @@ class _Chrome:
 
     def close(self) -> None:
         self._session = None  # Browser.close is a browser-level command
-        try:
+        with contextlib.suppress(OSError, RuntimeError):
             self._send("Browser.close")
-        except (OSError, RuntimeError):
-            pass
         try:
             self._process.wait(timeout=10)
         except subprocess.TimeoutExpired:

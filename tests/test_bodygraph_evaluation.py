@@ -1267,7 +1267,7 @@ def test_predicted_validity_requires_a_real_boolean(value) -> None:
 def test_partial_prediction_entries_still_require_identity_and_supported_keys(tmp_path, entry):
     path = _write_predictions_file(tmp_path, [entry])
 
-    with pytest.raises(ValueError, match="case_id|unsupported"):
+    with pytest.raises(ValueError, match=r"case_id|unsupported"):
         _script_module()._load_predictions(path)
 
 
@@ -1769,13 +1769,13 @@ def test_golden_warning_validation_is_independent_of_prediction_presence(
         prediction["validation_result"]["warnings"] = []
     missing_case = prediction_state == "missing_case"
 
-    with pytest.raises(ValueError, match="unknown warning code|canonical"):
+    with pytest.raises(ValueError, match=r"unknown warning code|canonical"):
         evaluation.evaluate_bodygraph_prediction(
             case_id="case_001",
             golden=golden,
             prediction={} if missing_case else prediction,
         )
-    with pytest.raises(ValueError, match="unknown warning code|canonical"):
+    with pytest.raises(ValueError, match=r"unknown warning code|canonical"):
         evaluation.evaluate_bodygraph_predictions(
             golden_cases=[golden],
             predictions={} if missing_case else {"case_001": prediction},
@@ -1832,7 +1832,7 @@ def test_non_list_prediction_warnings_raise_input_error() -> None:
     assert isinstance(validation_result, dict)
     validation_result["warnings"] = "MISSING_ACTIVATION"
 
-    with pytest.raises(ValueError, match="validation_result.warnings"):
+    with pytest.raises(ValueError, match=r"validation_result.warnings"):
         evaluation.evaluate_bodygraph_prediction(
             case_id="case_001",
             golden=_golden_case(warning_entries=[expected_warning]),
@@ -1973,7 +1973,7 @@ def test_prediction_loader_rejects_legacy_unwrapped_shapes(
     path = tmp_path / "predictions.json"
     path.write_text(json.dumps(payload))
 
-    with pytest.raises(ValueError, match="predictions|schema_version"):
+    with pytest.raises(ValueError, match=r"predictions|schema_version"):
         script._load_predictions(path)
 
 
@@ -2071,7 +2071,7 @@ def test_derived_scope_rejects_invalid_source_activations(
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     golden["expected_raw_labels"]["design"]["pluto"] = activation
 
-    with pytest.raises(ValueError, match="design.pluto"):
+    with pytest.raises(ValueError, match=r"design.pluto"):
         validate_evaluation_scope(golden)
 
 
@@ -2185,7 +2185,7 @@ def test_scope_and_derived_labels_must_agree(
 
     with pytest.raises(
         ValueError,
-        match="include_derived_metrics.*expected_derived_labels|expected_derived_labels.*include_derived_metrics",
+        match=r"include_derived_metrics.*expected_derived_labels|expected_derived_labels.*include_derived_metrics",
     ):
         validate_evaluation_scope(golden_case)
 

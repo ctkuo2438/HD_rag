@@ -79,7 +79,7 @@ def test_none_imports_nothing_and_preserves_exact_order(monkeypatch):
     assert type(reranker).__name__ == "NoOpReranker"
     actual = reranker.rerank("dense query", chunks, 2)
     assert actual == chunks[:2]
-    assert all(a is b for a, b in zip(actual, chunks))
+    assert all(a is b for a, b in zip(actual, chunks[:2], strict=True))
     assert chunks == candidates()
 
 

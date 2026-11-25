@@ -102,7 +102,7 @@ def validate_evaluation_scope(golden: Mapping[str, object]) -> tuple[bool, bool]
     include_raw = scope["include_raw_visual_metrics"] is True
     include_derived = scope["include_derived_metrics"] is True
 
-    raw_collections = tuple(field for _, field, _ in _VISUAL_SET_SPECS) + ("uncertain_items",)
+    raw_collections = (*(field for _, field, _ in _VISUAL_SET_SPECS), "uncertain_items")
     raw = _require_label_fields(
         golden.get("expected_raw_labels"),
         {"personality", "design", *raw_collections},
@@ -262,7 +262,7 @@ def evaluate_bodygraph_predictions(
         case_result = evaluate_bodygraph_prediction(
             case_id=case_id,
             golden=golden,
-            prediction=predictions[case_id] if case_id in predictions else {},
+            prediction=predictions.get(case_id, {}),
         )
         if case_id not in predictions:
             case_result = EvaluationCaseResult(
@@ -647,15 +647,15 @@ def _collection(
 __all__ = [
     "EvaluationCaseResult",
     "EvaluationSummary",
-    "evaluate_bodygraph_prediction",
-    "evaluate_bodygraph_predictions",
-    "validate_evaluation_scope",
-    "validate_prediction",
-    "check_thresholds",
     "activation_exact_match",
     "activation_match_rate",
-    "precision_recall_f1",
+    "check_thresholds",
+    "evaluate_bodygraph_prediction",
+    "evaluate_bodygraph_predictions",
     "macro_average",
+    "precision_recall_f1",
+    "validate_evaluation_scope",
+    "validate_prediction",
     "warning_code_metrics",
     "warning_codes",
 ]

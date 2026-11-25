@@ -35,7 +35,7 @@ def test_packaged_template_loads_independently_of_cwd(tmp_path, monkeypatch):
 
 def test_missing_template_error_names_resource_without_content_or_local_path(tmp_path, monkeypatch):
     monkeypatch.setattr("human_design.reading.prompt.files", lambda package: tmp_path)
-    with pytest.raises(FileNotFoundError, match="human_design_answer.txt") as caught:
+    with pytest.raises(FileNotFoundError, match=r"human_design_answer.txt") as caught:
         load_reading_prompt()
     assert str(tmp_path) not in str(caught.value)
 

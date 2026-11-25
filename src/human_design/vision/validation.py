@@ -253,6 +253,6 @@ def _warning_key(warning: ValidationWarning) -> tuple[ValidationCode, str]:
 
 
 __all__ = [
-    "validate_bodygraph_extraction",
     "validate_bodygraph_components",
+    "validate_bodygraph_extraction",
 ]

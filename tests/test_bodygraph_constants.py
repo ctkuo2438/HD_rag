@@ -182,5 +182,5 @@ def test_planetary_fields_are_exact_ordered_thirteen_field_tuple() -> None:
 
 def test_motor_centers_are_exact_canonical_frozenset() -> None:
     assert isinstance(MOTOR_CENTERS, frozenset)
-    assert MOTOR_CENTERS == frozenset({"Root", "Sacral", "Solar Plexus", "Ego"})
+    assert frozenset({"Root", "Sacral", "Solar Plexus", "Ego"}) == MOTOR_CENTERS
     assert MOTOR_CENTERS.issubset(CANONICAL_CENTERS)

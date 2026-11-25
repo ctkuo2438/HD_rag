@@ -582,4 +582,4 @@ def test_models_are_immutable() -> None:
     activation = Activation(gate=61, line=4)
 
     with pytest.raises(FrozenInstanceError):
-        setattr(activation, "line", 5)
+        activation.line = 5

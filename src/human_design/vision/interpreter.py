@@ -257,8 +257,8 @@ def _unsupported_authority_warning() -> ValidationWarning:
 
 __all__ = [
     "BodyGraphInterpretationResult",
-    "interpret_bodygraph",
-    "derive_active_gates",
     "derive_active_channels",
+    "derive_active_gates",
     "derive_defined_centers",
+    "interpret_bodygraph",
 ]

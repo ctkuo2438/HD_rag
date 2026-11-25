@@ -146,7 +146,7 @@ def evaluate_modes(
     return reports
 
 
-def _parse_case(item: object) -> EvaluationCase:
+def _parse_case(item: object) -> EvaluationCase:  # noqa: C901
     if not isinstance(item, dict):
         raise ValueError("query case must be an object")
     required = {"case_id", "original_query", "dense_query", "sparse_query"}

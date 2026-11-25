@@ -233,7 +233,7 @@ def test_malformed_json_raises_parse_error() -> None:
 
 @pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
 def test_nonstandard_json_numeric_constants_are_rejected(constant: str) -> None:
-    with pytest.raises(BodyGraphParseError, match="Invalid JSON|non-standard"):
+    with pytest.raises(BodyGraphParseError, match=r"Invalid JSON|non-standard"):
         parse_bodygraph_raw_extraction_json(f'{{"value": {constant}}}')
 
 
@@ -243,7 +243,7 @@ def test_nested_nonfinite_uncertain_observed_value_is_rejected_at_json_decode() 
         '"observed_value": NaN',
     )
 
-    with pytest.raises(BodyGraphParseError, match="Invalid JSON|non-standard"):
+    with pytest.raises(BodyGraphParseError, match=r"Invalid JSON|non-standard"):
         parse_bodygraph_raw_extraction_json(payload)
 
 
@@ -273,7 +273,7 @@ def test_missing_top_level_fields_are_reported_together() -> None:
     del payload["personality"]
     del payload["uncertain_items"]
 
-    with pytest.raises(BodyGraphParseError, match="personality.*uncertain_items"):
+    with pytest.raises(BodyGraphParseError, match=r"personality.*uncertain_items"):
         _parse(payload)
 
 

@@ -243,7 +243,7 @@ def test_noop_and_fake_cohere_use_existing_adapters_and_only_final_sources(monke
             )
         )
 
-        def factory(c):
+        def factory(c, calls=calls, client=client):
             calls.append(c.rerank_provider)
             return create_reranker(c, client=client)
 

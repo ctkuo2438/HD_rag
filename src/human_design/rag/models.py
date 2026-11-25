@@ -78,7 +78,7 @@ class RetrievedChunk:
     rerank_score: float | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> None:  # noqa: C901
         for name in ("chunk_id", "text", "source_file"):
             if not isinstance(getattr(self, name), str):
                 raise TypeError(f"{name} must be a string")

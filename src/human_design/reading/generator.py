@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from typing import Protocol, TypedDict, cast
@@ -233,9 +234,7 @@ def generate_answer(
         raise GenerationError(f"Generation provider request failed{detail}", code="provider_request") from None
     finally:
         if owned:
-            try:
+            # Cleanup failures must not disclose provider state or cause retries.
+            with contextlib.suppress(Exception):
                 client.close()
-            except Exception:
-                # Cleanup failures must not disclose provider state or cause retries.
-                pass
     return _validated_answer(_parse_response(response), prompt_context, config, rendered)
