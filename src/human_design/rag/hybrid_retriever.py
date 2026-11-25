@@ -31,8 +31,12 @@ def _safe_candidate(chunk: RetrievedChunk, backend: str) -> RetrievedChunk:
         metadata[key] = value
     other = "sparse" if backend == "dense" else "dense"
     return replace(
-        chunk, **{name: public.get(name) for name in _SOURCE_FIELDS}, metadata=metadata,
-        **{f"{other}_rank": None, f"{other}_score": None}, rrf_score=None, rerank_score=None,
+        chunk,
+        **{name: public.get(name) for name in _SOURCE_FIELDS},
+        metadata=metadata,
+        **{f"{other}_rank": None, f"{other}_score": None},
+        rrf_score=None,
+        rerank_score=None,
     )
 
 
@@ -55,7 +59,11 @@ def _merge(existing: RetrievedChunk, incoming: RetrievedChunk) -> RetrievedChunk
 
 
 def fuse_rrf(
-    dense: Sequence[RetrievedChunk], sparse: Sequence[RetrievedChunk], *, rrf_k: int, fusion_top_k: int,
+    dense: Sequence[RetrievedChunk],
+    sparse: Sequence[RetrievedChunk],
+    *,
+    rrf_k: int,
+    fusion_top_k: int,
 ) -> tuple[RetrievedChunk, ...]:
     """Deduplicate by canonical ID; scores remain diagnostics and never enter RRF."""
     for value in (rrf_k, fusion_top_k):
@@ -67,14 +75,20 @@ def fuse_rrf(
             candidate = _safe_candidate(chunk, backend)
             existing = merged.get(candidate.chunk_id)
             merged[candidate.chunk_id] = _merge(existing, candidate) if existing else candidate
-    fused = [replace(chunk, rrf_score=sum(
-        1 / (rrf_k + rank) for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None
-    )) for chunk in merged.values()]
-    fused.sort(key=lambda chunk: (
-        -chunk.rrf_score,
-        min(rank for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None),
-        chunk.chunk_id,
-    ))
+    fused = [
+        replace(
+            chunk,
+            rrf_score=sum(1 / (rrf_k + rank) for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None),
+        )
+        for chunk in merged.values()
+    ]
+    fused.sort(
+        key=lambda chunk: (
+            -chunk.rrf_score,
+            min(rank for rank in (chunk.dense_rank, chunk.sparse_rank) if rank is not None),
+            chunk.chunk_id,
+        )
+    )
     return tuple(fused[:fusion_top_k])
 
 
@@ -86,14 +100,22 @@ class HybridRetriever:
 
     def retrieve(self, request: HybridSearchRequest) -> HybridRetrievalResult:
         identity = getattr(self.dense_adapter, "ingestion_id", None)
-        if (not isinstance(identity, str) or not identity.strip()
-                or identity != getattr(self.sparse_adapter, "ingestion_id", None)):
+        if (
+            not isinstance(identity, str)
+            or not identity.strip()
+            or identity != getattr(self.sparse_adapter, "ingestion_id", None)
+        ):
             raise HybridIndexError("Dense/sparse ingestion identity is missing or mismatched")
         settings = self.config
         result = HybridRetrievalResult(
-            request=request, ingestion_version=settings.ingestion_version, ingestion_id=identity,
-            dense_top_k=settings.dense_top_k, sparse_top_k=settings.sparse_top_k,
-            fusion_top_k=settings.fusion_top_k, final_top_k=settings.final_top_k, rrf_k=settings.rrf_k,
+            request=request,
+            ingestion_version=settings.ingestion_version,
+            ingestion_id=identity,
+            dense_top_k=settings.dense_top_k,
+            sparse_top_k=settings.sparse_top_k,
+            fusion_top_k=settings.fusion_top_k,
+            final_top_k=settings.final_top_k,
+            rrf_k=settings.rrf_k,
         )
         try:
             dense = self.dense_adapter.retrieve(request.dense_query, settings.dense_top_k)
@@ -103,6 +125,12 @@ class HybridRetriever:
             sparse = self.sparse_adapter.retrieve(request.sparse_query, settings.sparse_top_k)
         except Exception:
             raise HybridIndexError("Phase 3 sparse retrieval failed; check the BM25 index") from None
-        return replace(result, candidates=fuse_rrf(
-            dense, sparse, rrf_k=settings.rrf_k, fusion_top_k=settings.fusion_top_k,
-        ))
+        return replace(
+            result,
+            candidates=fuse_rrf(
+                dense,
+                sparse,
+                rrf_k=settings.rrf_k,
+                fusion_top_k=settings.fusion_top_k,
+            ),
+        )

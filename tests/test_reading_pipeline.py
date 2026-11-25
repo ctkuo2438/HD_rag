@@ -17,7 +17,11 @@ from human_design.reading import ReadingPipeline
 from human_design.reading import pipeline as module
 from human_design.reading.generator import GenerationValidationError
 from human_design.reading.models import (
-    AnswerResult, AnswerStatus, ChartImageQuestionRequest, ChartQuestionRequest, KnowledgeQuestionRequest,
+    AnswerResult,
+    AnswerStatus,
+    ChartImageQuestionRequest,
+    ChartQuestionRequest,
+    KnowledgeQuestionRequest,
 )
 from human_design.reading.prompt import build_source_citations
 from human_design.reading.query_builder import InvalidQuestionError
@@ -32,8 +36,11 @@ def chart():
     raw = (Path(__file__).parent / "fixtures/bodygraph/test1_raw_response.json").read_text()
     parsed = parse_bodygraph_raw_extraction_json(raw)
     derived = interpret_bodygraph(parsed.raw_vision)
-    return BodyGraphExtractionResult(parsed.raw_vision, derived.derived_chart_data,
-        validate_bodygraph_extraction(parse_result=parsed, interpretation_result=derived))
+    return BodyGraphExtractionResult(
+        parsed.raw_vision,
+        derived.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=parsed, interpretation_result=derived),
+    )
 
 
 def settings(**changes):
@@ -41,8 +48,15 @@ def settings(**changes):
 
 
 def chunks(backend):
-    return [RetrievedChunk(f"chunk-{i}", f"Synthetic passage number {i}.", "reference.pdf",
-                           **{f"{backend}_rank": i, f"{backend}_score": 0.7}) for i in range(1, 4)]
+    return [
+        RetrievedChunk(
+            f"chunk-{i}",
+            f"Synthetic passage number {i}.",
+            "reference.pdf",
+            **{f"{backend}_rank": i, f"{backend}_score": 0.7},
+        )
+        for i in range(1, 4)
+    ]
 
 
 class FakeRetriever:
@@ -63,20 +77,30 @@ def service(events, *, config=None, values=None, reranker=None, **kwargs):
     def generate(prompt, config):
         events.append(("generate",))
         captured.append(prompt)
-        return AnswerResult(AnswerStatus.OK, "Grounded explanation [S1].",
-                            citations=build_source_citations(prompt)[:1], chart_facts_used=prompt.chart_facts[:1])
+        return AnswerResult(
+            AnswerStatus.OK,
+            "Grounded explanation [S1].",
+            citations=build_source_citations(prompt)[:1],
+            chart_facts_used=prompt.chart_facts[:1],
+        )
 
-    return ReadingPipeline(config=config or settings(),
+    return ReadingPipeline(
+        config=config or settings(),
         dense_retriever=FakeRetriever("dense", events, values),
         sparse_retriever=FakeRetriever("sparse", events, values),
-        reranker=reranker, generator=generate, **kwargs), captured
+        reranker=reranker,
+        generator=generate,
+        **kwargs,
+    ), captured
 
 
 def record_function(monkeypatch, target, name, events):
     original = getattr(target, name)
+
     def record(*args, **kwargs):
         events.append((name,))
         return original(*args, **kwargs)
+
     monkeypatch.setattr(target, name, record)
 
 
@@ -87,11 +111,19 @@ def test_exact_knowledge_order_and_purpose_specific_queries(monkeypatch):
     for name in ("validate_query", "build_retrieval_queries", "build_prompt_context"):
         record_function(monkeypatch, module, name, events)
     record_function(monkeypatch, hybrid_retriever, "fuse_rrf", events)
-    rerank = SimpleNamespace(rerank=lambda q, c, n: (events.append(("rerank", q, n)) or list(c)[:n]))
+    rerank = SimpleNamespace(rerank=lambda q, c, n: events.append(("rerank", q, n)) or list(c)[:n])
     pipeline, captured = service(events, reranker=rerank)
     answer = pipeline.answer_knowledge_question(KnowledgeQuestionRequest("  Explain Hexagram 42  "))
-    assert [e[0] for e in events] == ["validate_query", "build_retrieval_queries", "dense", "sparse",
-                                    "fuse_rrf", "rerank", "build_prompt_context", "generate"]
+    assert [e[0] for e in events] == [
+        "validate_query",
+        "build_retrieval_queries",
+        "dense",
+        "sparse",
+        "fuse_rrf",
+        "rerank",
+        "build_prompt_context",
+        "generate",
+    ]
     assert events[2][1] == "Explain Hexagram 42"
     assert "Gate 42" in events[3][1] and events[3][1] != events[2][1]
     assert events[5][1] == events[2][1]
@@ -120,12 +152,23 @@ def test_chart_adaptation_and_fact_selection_before_retrieval_without_image_acce
 @pytest.mark.parametrize("query", ["", " \n\t", "x" * 2001], ids=["empty", "whitespace", "oversized"])
 def test_invalid_query_precedes_every_dependency(kind, query, chart, monkeypatch):
     forbidden = Mock(side_effect=AssertionError("invalid input must stop first"))
-    for name in ("load_config", "build_chart_context", "build_retrieval_queries", "load_dense_retriever",
-                 "load_bm25_retriever", "create_reranker", "build_prompt_context", "generate_answer"):
+    for name in (
+        "load_config",
+        "build_chart_context",
+        "build_retrieval_queries",
+        "load_dense_retriever",
+        "load_bm25_retriever",
+        "create_reranker",
+        "build_prompt_context",
+        "generate_answer",
+    ):
         monkeypatch.setattr(module, name, forbidden)
     pipeline = ReadingPipeline(extractor=forbidden)
-    requests = {"knowledge": KnowledgeQuestionRequest(query), "chart": ChartQuestionRequest(query, chart),
-                "image": ChartImageQuestionRequest(query, Path("unread.png"))}
+    requests = {
+        "knowledge": KnowledgeQuestionRequest(query),
+        "chart": ChartQuestionRequest(query, chart),
+        "image": ChartImageQuestionRequest(query, Path("unread.png")),
+    }
     with pytest.raises(InvalidQuestionError):
         getattr(pipeline, f"answer_{'chart_image' if kind == 'image' else kind}_question")(requests[kind])
     forbidden.assert_not_called()
@@ -136,8 +179,11 @@ def test_invalid_chart_short_circuits_before_configuration_and_retrieval(chart, 
 
     raw = replace(chart.raw_vision, personality=replace(chart.raw_vision.personality, sun=None))
     interpreted = interpret_bodygraph(raw)
-    invalid = BodyGraphExtractionResult(raw, interpreted.derived_chart_data,
-        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=interpreted))
+    invalid = BodyGraphExtractionResult(
+        raw,
+        interpreted.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=interpreted),
+    )
     assert not invalid.validation_result.is_valid
     forbidden = Mock(side_effect=AssertionError("invalid chart must stop first"))
     monkeypatch.setattr(module, "load_config", forbidden)
@@ -155,8 +201,11 @@ def test_no_fused_evidence_never_reranks_renders_or_generates(with_chart, chart,
     for name in ("create_reranker", "build_prompt_context"):
         monkeypatch.setattr(module, name, forbidden)
     pipeline, captured = service(events, values=[])
-    result = pipeline.answer_chart_question(ChartQuestionRequest("Explain Profile", chart)) if with_chart else (
-        pipeline.answer_knowledge_question(KnowledgeQuestionRequest("Gate 42")))
+    result = (
+        pipeline.answer_chart_question(ChartQuestionRequest("Explain Profile", chart))
+        if with_chart
+        else (pipeline.answer_knowledge_question(KnowledgeQuestionRequest("Gate 42")))
+    )
     assert result.status is AnswerStatus.INSUFFICIENT_EVIDENCE
     assert result.citations == result.chart_facts_used == ()
     assert [e[0] for e in events] == ["dense", "sparse"] and not captured
@@ -167,20 +216,37 @@ def test_empty_reranking_result_never_builds_prompt(monkeypatch):
     forbidden = Mock(side_effect=AssertionError("no final evidence"))
     monkeypatch.setattr(module, "build_prompt_context", forbidden)
     pipeline, captured = service([], reranker=SimpleNamespace(rerank=lambda *args: []))
-    assert pipeline.answer_knowledge_question(KnowledgeQuestionRequest("Gate 42")).status is AnswerStatus.INSUFFICIENT_EVIDENCE
+    assert (
+        pipeline.answer_knowledge_question(KnowledgeQuestionRequest("Gate 42")).status
+        is AnswerStatus.INSUFFICIENT_EVIDENCE
+    )
     assert not captured
 
 
 def test_noop_and_fake_cohere_use_existing_adapters_and_only_final_sources(monkeypatch):
     for provider in ("none", "cohere"):
         calls = []
-        config = settings(rerank_provider=provider, real_rerank_api=provider == "cohere",
-                          cohere_api_key="fake-key", rerank_model="fake-model")
-        client = SimpleNamespace(rerank=Mock(return_value=SimpleNamespace(results=[
-            SimpleNamespace(index=2, relevance_score=0.5), SimpleNamespace(index=0, relevance_score=0.1)])))
+        config = settings(
+            rerank_provider=provider,
+            real_rerank_api=provider == "cohere",
+            cohere_api_key="fake-key",
+            rerank_model="fake-model",
+        )
+        client = SimpleNamespace(
+            rerank=Mock(
+                return_value=SimpleNamespace(
+                    results=[
+                        SimpleNamespace(index=2, relevance_score=0.5),
+                        SimpleNamespace(index=0, relevance_score=0.1),
+                    ]
+                )
+            )
+        )
+
         def factory(c):
             calls.append(c.rerank_provider)
             return create_reranker(c, client=client)
+
         monkeypatch.setattr(module, "create_reranker", factory)
         pipeline, captured = service([], config=config)
         pipeline.answer_knowledge_question(KnowledgeQuestionRequest("Hexagram 42"))
@@ -291,12 +357,16 @@ def test_image_facade_never_reports_an_invalid_chart(chart):
 
     raw = replace(chart.raw_vision, personality=replace(chart.raw_vision.personality, sun=None))
     derived = interpret_bodygraph(raw)
-    invalid = BodyGraphExtractionResult(raw, derived.derived_chart_data,
-        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=derived))
+    invalid = BodyGraphExtractionResult(
+        raw,
+        derived.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=derived),
+    )
     validated = Mock()
     generator = Mock(side_effect=AssertionError("invalid chart must stop first"))
     result = ReadingPipeline(extractor=Mock(return_value=invalid), generator=generator).answer_chart_image_question(
-        ChartImageQuestionRequest("Explain Profile", Path("unread.png")), on_validated_chart=validated)
+        ChartImageQuestionRequest("Explain Profile", Path("unread.png")), on_validated_chart=validated
+    )
     assert result.status is AnswerStatus.INVALID_CHART
     validated.assert_not_called()
     generator.assert_not_called()
@@ -334,7 +404,11 @@ def test_production_image_extractor_reuses_phase2_flow(chart, monkeypatch):
     path = Path("not-read.png")
     ReadingPipeline().answer_chart_image_question(ChartImageQuestionRequest("Profile", path))
     assert extraction.call_args.kwargs["image_path"] == path
-    assert [e[0] for e in events] == ["parse_bodygraph_raw_extraction_json", "interpret_bodygraph", "validate_bodygraph_extraction"]
+    assert [e[0] for e in events] == [
+        "parse_bodygraph_raw_extraction_json",
+        "interpret_bodygraph",
+        "validate_bodygraph_extraction",
+    ]
     assert core.call_args.args[0].bodygraph_result == chart
 
 
@@ -342,8 +416,11 @@ def test_production_image_extractor_reuses_phase2_flow(chart, monkeypatch):
 def test_operational_failures_are_sanitized(stage, chart, capsys):
     private = "fake-key /private/chart.png base64-marker birth-date-1901 complete private passage"
     bad = Mock(side_effect=RuntimeError(private))
-    pipeline, _ = service([], extractor=bad if stage == "extractor" else None,
-                          reranker=SimpleNamespace(rerank=bad) if stage == "reranker" else NoOpReranker())
+    pipeline, _ = service(
+        [],
+        extractor=bad if stage == "extractor" else None,
+        reranker=SimpleNamespace(rerank=bad) if stage == "reranker" else NoOpReranker(),
+    )
     if stage == "generator":
         pipeline = replace(pipeline, generator=bad)
     with pytest.raises(module.ReadingPipelineError) as caught:
@@ -358,48 +435,100 @@ def test_operational_failures_are_sanitized(stage, chart, capsys):
 
 def test_pipeline_preserves_safe_generation_diagnostic_without_retry():
     pipeline, _ = service([])
-    generator = Mock(side_effect=GenerationValidationError(
-        "Generation referenced an unknown source ID", code="unknown_source"))
+    generator = Mock(
+        side_effect=GenerationValidationError("Generation referenced an unknown source ID", code="unknown_source")
+    )
     with pytest.raises(module.ReadingPipelineError, match=r"\[unknown_source\].*unknown source ID"):
         replace(pipeline, generator=generator).answer_knowledge_question(KnowledgeQuestionRequest("Gate 42"))
     generator.assert_called_once()
 
 
-@pytest.mark.parametrize("query", [
-    "Give me a complete reading", "Read my entire chart", "Explain everything in my chart",
-    "Give me a complete reading of my chart", "Give me a complete reading of my chart.",
-    "Give me a full reading", "Give me a full reading of my chart", "Give me a full reading of my chart.",
-    "  GIVE\tme a FULL reading\nof my CHART?!  ",
-    "Tell me everything about my Human Design", "完整解讀我的人類圖", "幫我看完整張圖", "全部都解釋給我",
-    "  GIVE me a COMPLETE reading!!! ", "Read\tmy entire\nchart?", "Please, read my entire chart.",
-    "Tell me everything about my Human Design！", " 完整 解讀 我的 人類圖。 ", "幫我看完整張圖？！",
-    "完整解读我的人类图", "帮我看完整张图", "全部都解释给我",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Give me a complete reading",
+        "Read my entire chart",
+        "Explain everything in my chart",
+        "Give me a complete reading of my chart",
+        "Give me a complete reading of my chart.",
+        "Give me a full reading",
+        "Give me a full reading of my chart",
+        "Give me a full reading of my chart.",
+        "  GIVE\tme a FULL reading\nof my CHART?!  ",
+        "Tell me everything about my Human Design",
+        "完整解讀我的人類圖",
+        "幫我看完整張圖",
+        "全部都解釋給我",
+        "  GIVE me a COMPLETE reading!!! ",
+        "Read\tmy entire\nchart?",
+        "Please, read my entire chart.",
+        "Tell me everything about my Human Design！",
+        " 完整 解讀 我的 人類圖。 ",
+        "幫我看完整張圖？！",
+        "完整解读我的人类图",
+        "帮我看完整张图",
+        "全部都解释给我",
+    ],
+)
 @pytest.mark.parametrize("kind", ["knowledge", "chart", "image"])
 def test_broad_reading_stops_before_every_dependency(query, kind, chart, monkeypatch):
     forbidden = Mock(side_effect=AssertionError("scope guard must stop first"))
-    for name in ("load_config", "load_vision_config", "extract_bodygraph", "build_chart_context",
-                 "build_retrieval_queries", "load_manifest", "load_nodes", "load_dense_retriever",
-                 "load_bm25_retriever", "create_reranker", "build_prompt_context", "generate_answer"):
+    for name in (
+        "load_config",
+        "load_vision_config",
+        "extract_bodygraph",
+        "build_chart_context",
+        "build_retrieval_queries",
+        "load_manifest",
+        "load_nodes",
+        "load_dense_retriever",
+        "load_bm25_retriever",
+        "create_reranker",
+        "build_prompt_context",
+        "generate_answer",
+    ):
         monkeypatch.setattr(module, name, forbidden)
     retriever = SimpleNamespace(ingestion_id="unused", retrieve=forbidden)
-    pipeline = ReadingPipeline(extractor=forbidden, dense_retriever=retriever, sparse_retriever=retriever,
-                               reranker=SimpleNamespace(rerank=forbidden), generator=forbidden)
-    requests = {"knowledge": KnowledgeQuestionRequest(query), "chart": ChartQuestionRequest(query, chart),
-                "image": ChartImageQuestionRequest(query, Path("/private/unread.png"))}
+    pipeline = ReadingPipeline(
+        extractor=forbidden,
+        dense_retriever=retriever,
+        sparse_retriever=retriever,
+        reranker=SimpleNamespace(rerank=forbidden),
+        generator=forbidden,
+    )
+    requests = {
+        "knowledge": KnowledgeQuestionRequest(query),
+        "chart": ChartQuestionRequest(query, chart),
+        "image": ChartImageQuestionRequest(query, Path("/private/unread.png")),
+    }
     result = getattr(pipeline, f"answer_{'chart_image' if kind == 'image' else kind}_question")(requests[kind])
-    assert result == AnswerResult(AnswerStatus.NEEDS_FOCUS,
-        "Please choose a specific topic, such as Authority, Profile, a Gate, a Channel, a Center, Type, Strategy, or Definition.")
+    assert result == AnswerResult(
+        AnswerStatus.NEEDS_FOCUS,
+        "Please choose a specific topic, such as Authority, Profile, a Gate, a Channel, a Center, Type, Strategy, or Definition.",
+    )
     assert result.citations == result.chart_facts_used == result.warnings == ()
     forbidden.assert_not_called()
 
 
-@pytest.mark.parametrize("query", [
-    "Gate 42", "Channel 42-53", "Profile 4/6", "Sacral Authority", "Solar Plexus Center",
-    "Generator Type", "Strategy", "Split Definition", "How does Gate 42 complete Channel 42-53?",
-    "Explain everything about Gate 42", "Give me a complete explanation of Sacral Authority",
-    "Tell me everything about my Profile", "完整解釋我的薦骨權威", "說明42號閘門如何完成通道",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Gate 42",
+        "Channel 42-53",
+        "Profile 4/6",
+        "Sacral Authority",
+        "Solar Plexus Center",
+        "Generator Type",
+        "Strategy",
+        "Split Definition",
+        "How does Gate 42 complete Channel 42-53?",
+        "Explain everything about Gate 42",
+        "Give me a complete explanation of Sacral Authority",
+        "Tell me everything about my Profile",
+        "完整解釋我的薦骨權威",
+        "說明42號閘門如何完成通道",
+    ],
+)
 def test_focused_questions_and_complete_everything_counterexamples_continue(query):
     events = []
     pipeline, captured = service(events)

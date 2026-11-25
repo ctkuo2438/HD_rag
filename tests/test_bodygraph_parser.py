@@ -171,8 +171,7 @@ def test_real_vision_center_aliases_normalize_to_canonical_names(
     assert result.warnings == ()
 
 
-def test_center_normalization_handles_case_whitespace_and_separators(
-) -> None:
+def test_center_normalization_handles_case_whitespace_and_separators() -> None:
     payload = _valid_payload()
     payload["visually_defined_centers"] = ["  SoLaR___PlExUs---CeNtEr  "]
 
@@ -501,8 +500,7 @@ def test_visually_active_gates_normalize_to_integers_and_invalid_gates_warn() ->
     )
     assert all(warning.source is ValidationSource.parser for warning in result.warnings)
     assert all(
-        warning.severity is ValidationSeverity.WARNING
-        and warning.affects_validity is False
+        warning.severity is ValidationSeverity.WARNING and warning.affects_validity is False
         for warning in result.warnings
     )
 
@@ -514,9 +512,7 @@ def test_invalid_visual_gate_is_skipped_with_nonfatal_visual_warning() -> None:
     result = _parse(payload)
 
     assert result.raw_vision.visually_active_gates == (3, 60)
-    assert _warning_codes(result.warnings) == (
-        ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,
-    )
+    assert _warning_codes(result.warnings) == (ValidationCode.INVALID_VISUALLY_ACTIVE_GATE,)
     warning = result.warnings[0]
     assert warning.severity is ValidationSeverity.WARNING
     assert warning.affects_validity is False

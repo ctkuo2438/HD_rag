@@ -16,8 +16,13 @@ from human_design.rag.retriever import load_dense_retriever
 from human_design.reading.chart_context import InvalidChartError, build_chart_context
 from human_design.reading.generator import GenerationError, generate_answer
 from human_design.reading.models import (
-    AnswerResult, AnswerStatus, ChartContext, ChartImageQuestionRequest, ChartQuestionRequest,
-    KnowledgeQuestionRequest, PromptContext,
+    AnswerResult,
+    AnswerStatus,
+    ChartContext,
+    ChartImageQuestionRequest,
+    ChartQuestionRequest,
+    KnowledgeQuestionRequest,
+    PromptContext,
 )
 from human_design.reading.prompt import build_prompt_context
 from human_design.reading.query_builder import build_retrieval_queries, validate_query
@@ -46,13 +51,14 @@ _BROAD_CHINESE = re.compile(
 def _needs_focus(query: str) -> bool:
     """Match explicit whole-reading requests, not isolated complete/everything words."""
     normalized = re.sub(r"[\s,.!?;:，。！？；：、]+", " ", query).strip().casefold()
-    return bool(_BROAD_ENGLISH.fullmatch(normalized)
-                or _BROAD_CHINESE.fullmatch(normalized.replace(" ", "")))
+    return bool(_BROAD_ENGLISH.fullmatch(normalized) or _BROAD_CHINESE.fullmatch(normalized.replace(" ", "")))
 
 
 def _focus_result() -> AnswerResult:
-    return AnswerResult(AnswerStatus.NEEDS_FOCUS,
-        "Please choose a specific topic, such as Authority, Profile, a Gate, a Channel, a Center, Type, Strategy, or Definition.")
+    return AnswerResult(
+        AnswerStatus.NEEDS_FOCUS,
+        "Please choose a specific topic, such as Authority, Profile, a Gate, a Channel, a Center, Type, Strategy, or Definition.",
+    )
 
 
 def _extract_chart(image_path: Path) -> BodyGraphExtractionResult:
@@ -73,8 +79,9 @@ def _extract_chart(image_path: Path) -> BodyGraphExtractionResult:
 
 
 def _insufficient_evidence() -> AnswerResult:
-    return AnswerResult(AnswerStatus.INSUFFICIENT_EVIDENCE,
-                        "There is insufficient retrieved evidence to answer this question.")
+    return AnswerResult(
+        AnswerStatus.INSUFFICIENT_EVIDENCE, "There is insufficient retrieved evidence to answer this question."
+    )
 
 
 @dataclass(frozen=True)
@@ -105,8 +112,10 @@ class ReadingPipeline:
         try:
             context = build_chart_context(request.bodygraph_result)
         except InvalidChartError:
-            return AnswerResult(AnswerStatus.INVALID_CHART,
-                                "The chart failed validation. Please correct the chart extraction before asking again.")
+            return AnswerResult(
+                AnswerStatus.INVALID_CHART,
+                "The chart failed validation. Please correct the chart extraction before asking again.",
+            )
         return self._answer(query, context)
 
     def answer_chart_image_question(
@@ -176,7 +185,7 @@ class ReadingPipeline:
             return _insufficient_evidence()
         try:
             reranker = self.reranker if self.reranker is not None else create_reranker(config)
-            final = reranker.rerank(request.dense_query, result.candidates, config.final_top_k)[:config.final_top_k]
+            final = reranker.rerank(request.dense_query, result.candidates, config.final_top_k)[: config.final_top_k]
         except Exception:
             raise ReadingPipelineError(
                 "Reranking failed; check HD_RAG_RERANK_PROVIDER, HD_RAG_REAL_RERANK_API, "
@@ -192,4 +201,6 @@ class ReadingPipeline:
             # GenerationError contains only project-owned messages and safe diagnostics.
             raise ReadingPipelineError(f"Generation failed [{exc.code}]: {exc}") from None
         except Exception:
-            raise ReadingPipelineError("Generation failed [unexpected_error]: An unexpected generation error occurred") from None
+            raise ReadingPipelineError(
+                "Generation failed [unexpected_error]: An unexpected generation error occurred"
+            ) from None

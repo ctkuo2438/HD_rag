@@ -7,13 +7,19 @@ from human_design.rag import embeddings
 from human_design.rag.config import DEFAULT_EMBEDDING_MODEL, load_config
 
 
-@pytest.mark.parametrize(("options", "model", "api_key"), [
-    ({}, DEFAULT_EMBEDDING_MODEL, None),
-    ({"embedding_model": "custom-model"}, "custom-model", None),
-    ({"api_key": "fake-api-key"}, DEFAULT_EMBEDDING_MODEL, "fake-api-key"),
-])
+@pytest.mark.parametrize(
+    ("options", "model", "api_key"),
+    [
+        ({}, DEFAULT_EMBEDDING_MODEL, None),
+        ({"embedding_model": "custom-model"}, "custom-model", None),
+        ({"api_key": "fake-api-key"}, DEFAULT_EMBEDDING_MODEL, "fake-api-key"),
+    ],
+)
 def test_embedding_factory_passes_defaults_and_overrides(
-    monkeypatch: pytest.MonkeyPatch, options: dict[str, str], model: str, api_key: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    options: dict[str, str],
+    model: str,
+    api_key: str | None,
 ) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     constructor = Mock(return_value=object())

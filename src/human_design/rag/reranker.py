@@ -12,7 +12,10 @@ from human_design.rag.models import RetrievedChunk
 
 class Reranker(Protocol):
     def rerank(
-        self, query: str, chunks: Sequence[RetrievedChunk], top_n: int,
+        self,
+        query: str,
+        chunks: Sequence[RetrievedChunk],
+        top_n: int,
     ) -> list[RetrievedChunk]: ...
 
 
@@ -27,7 +30,7 @@ class NoOpReranker:
     final_top_k: int = DEFAULT_FINAL_TOP_K
 
     def rerank(self, query: str, chunks: Sequence[RetrievedChunk], top_n: int) -> list[RetrievedChunk]:
-        return list(chunks[:_limit(top_n, self.final_top_k)])
+        return list(chunks[: _limit(top_n, self.final_top_k)])
 
 
 def _require_cohere(config: AppConfig) -> None:
@@ -69,8 +72,10 @@ class CohereReranker:
             return []
         try:
             response = self.client.rerank(
-                model=self.config.rerank_model, query=query,
-                documents=[chunk.text for chunk in chunks], top_n=limit,
+                model=self.config.rerank_model,
+                query=query,
+                documents=[chunk.text for chunk in chunks],
+                top_n=limit,
             )
         except Exception:
             raise ValueError("Cohere reranking request failed") from None

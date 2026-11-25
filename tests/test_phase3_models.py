@@ -94,14 +94,13 @@ def test_requests_preserve_outer_image_and_typed_core_boundaries(
     for request in requests:
         with pytest.raises(FrozenInstanceError):
             request.query = "changed"
-        assert (Path in get_type_hints(type(request)).values()) == isinstance(
-            request, ChartImageQuestionRequest
-        )
+        assert (Path in get_type_hints(type(request)).values()) == isinstance(request, ChartImageQuestionRequest)
 
 
 @pytest.mark.parametrize("query", [None, 42, [], {}])
 def test_requests_reject_wrong_query_types(
-    query: object, chart_result: BodyGraphExtractionResult,
+    query: object,
+    chart_result: BodyGraphExtractionResult,
 ) -> None:
     with pytest.raises(TypeError, match="query"):
         KnowledgeQuestionRequest(query=query)
@@ -129,31 +128,44 @@ def test_request_content_validation_is_deferred() -> None:
 
 
 def _chunk(**overrides: object) -> RetrievedChunk:
-    values = {"chunk_id": "chunk-42", "text": "Synthetic Gate 42 passage.",
-              "source_file": "reference.pdf"}
+    values = {"chunk_id": "chunk-42", "text": "Synthetic Gate 42 passage.", "source_file": "reference.pdf"}
     return RetrievedChunk(**(values | overrides))
 
 
 def _fact(**overrides: object) -> ChartFact:
-    values = {"field": "active_gate", "value": 42,
-              "source_path": "derived_chart_data.active_gates[gate=42]"}
+    values = {"field": "active_gate", "value": 42, "source_path": "derived_chart_data.active_gates[gate=42]"}
     return ChartFact(**(values | overrides))
 
 
 def _retrieval(**overrides: object) -> HybridRetrievalResult:
     values = {
         "request": HybridSearchRequest("What is Gate 42?", "Gate 42 meaning", "Gate 42"),
-        "candidates": (), "ingestion_version": "v1", "ingestion_id": "corpus-identity",
-        "dense_top_k": 20, "sparse_top_k": 20, "fusion_top_k": 20,
-        "final_top_k": 4, "rrf_k": 60,
+        "candidates": (),
+        "ingestion_version": "v1",
+        "ingestion_id": "corpus-identity",
+        "dense_top_k": 20,
+        "sparse_top_k": 20,
+        "fusion_top_k": 20,
+        "final_top_k": 4,
+        "rrf_k": 60,
     }
     return HybridRetrievalResult(**(values | overrides))
 
 
-@pytest.mark.parametrize("model", [
-    HybridSearchRequest, RetrievedChunk, HybridRetrievalResult, ChartFact,
-    ChartContext, PromptSource, PromptContext, SourceCitation, AnswerResult,
-])
+@pytest.mark.parametrize(
+    "model",
+    [
+        HybridSearchRequest,
+        RetrievedChunk,
+        HybridRetrievalResult,
+        ChartFact,
+        ChartContext,
+        PromptSource,
+        PromptContext,
+        SourceCitation,
+        AnswerResult,
+    ],
+)
 def test_phase3_models_are_frozen_and_fully_typed(model: type) -> None:
     assert is_dataclass(model)
     assert model.__dataclass_params__.frozen
@@ -177,16 +189,20 @@ def test_hybrid_request_rejects_non_string_queries(name: str) -> None:
         HybridSearchRequest(**values)
 
 
-@pytest.mark.parametrize("provenance", [
-    {}, {"dense_rank": 1, "dense_score": 0.8},
-    {"sparse_rank": 2, "sparse_score": 4.2},
-    {"dense_rank": 3, "dense_score": 0.0, "sparse_rank": 1, "sparse_score": 7.0},
-    {"dense_rank": 1}, {"sparse_rank": 1},
-])
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        {},
+        {"dense_rank": 1, "dense_score": 0.8},
+        {"sparse_rank": 2, "sparse_score": 4.2},
+        {"dense_rank": 3, "dense_score": 0.0, "sparse_rank": 1, "sparse_score": 7.0},
+        {"dense_rank": 1},
+        {"sparse_rank": 1},
+    ],
+)
 def test_optional_retriever_provenance_has_no_sentinels(provenance: dict) -> None:
     chunk = _chunk(**provenance)
-    for name in ("dense_rank", "dense_score", "sparse_rank", "sparse_score",
-                 "rrf_score", "rerank_score"):
+    for name in ("dense_rank", "dense_score", "sparse_rank", "sparse_score", "rrf_score", "rerank_score"):
         assert getattr(chunk, name) == provenance.get(name)
     for name in ("source_relpath", "document_title", "page_label", "page_number"):
         assert getattr(chunk, name) is None
@@ -207,15 +223,22 @@ def test_scores_must_be_finite_numbers_when_present(name: str, score: object) ->
 
 
 def test_fused_result_preserves_order_and_index_provenance() -> None:
-    candidates = [_chunk(chunk_id="second", sparse_rank=1, rrf_score=0.02),
-                  _chunk(chunk_id="first", dense_rank=2, rrf_score=0.01)]
+    candidates = [
+        _chunk(chunk_id="second", sparse_rank=1, rrf_score=0.02),
+        _chunk(chunk_id="first", dense_rank=2, rrf_score=0.01),
+    ]
     result = _retrieval(candidates=candidates)
     candidates.clear()
     assert tuple(item.chunk_id for item in result.candidates) == ("second", "first")
     assert result.ingestion_version == "v1"
     assert result.ingestion_id == "corpus-identity"
-    assert (result.dense_top_k, result.sparse_top_k, result.fusion_top_k,
-            result.final_top_k, result.rrf_k) == (20, 20, 20, 4, 60)
+    assert (result.dense_top_k, result.sparse_top_k, result.fusion_top_k, result.final_top_k, result.rrf_k) == (
+        20,
+        20,
+        20,
+        4,
+        60,
+    )
     assert result.rerank_provider is None
     assert result.rerank_model is None
     reranked = replace(result, rerank_provider="cohere", rerank_model="fixture-rerank")
@@ -238,11 +261,19 @@ def test_metadata_is_json_safe_and_copied() -> None:
     assert first.metadata is not second.metadata
 
 
-@pytest.mark.parametrize("metadata", [
-    [], {1: "non-string key"}, {"bad": Path("reference.pdf")},
-    {"bad": {1, 2}}, {"bad": object()}, {"bad": float("nan")},
-    {"nested": {"bad": float("inf")}}, {"bad": (1, 2)},
-])
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        [],
+        {1: "non-string key"},
+        {"bad": Path("reference.pdf")},
+        {"bad": {1, 2}},
+        {"bad": object()},
+        {"bad": float("nan")},
+        {"nested": {"bad": float("inf")}},
+        {"bad": (1, 2)},
+    ],
+)
 def test_metadata_rejects_non_json_values(metadata: object) -> None:
     with pytest.raises((TypeError, ValueError), match="metadata"):
         _chunk(metadata=metadata)
@@ -284,10 +315,15 @@ def test_prompt_contains_only_question_selected_facts_and_final_sources() -> Non
     assert source.chunk.source_relpath == "books/reference.pdf"
 
 
-@pytest.mark.parametrize("path", [
-    "/private/reference.pdf", "C:\\private\\reference.pdf", "\\\\host\\share\\book.pdf",
-    "file:///private/reference.pdf",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/private/reference.pdf",
+        "C:\\private\\reference.pdf",
+        "\\\\host\\share\\book.pdf",
+        "file:///private/reference.pdf",
+    ],
+)
 @pytest.mark.parametrize("name", ["source_file", "document_title", "page_label"])
 def test_citations_reject_absolute_paths(name: str, path: str) -> None:
     values = {"citation_id": "S1", "chunk_id": "chunk-42", "source_file": "reference.pdf"}
@@ -307,10 +343,15 @@ def test_prompt_source_rejects_internal_absolute_metadata() -> None:
         PromptSource(citation_id="S1", chunk=chunk)
 
 
-@pytest.mark.parametrize("path", [
-    "/private/reference.pdf", "C:\\private\\reference.pdf", "\\\\host\\share\\book.pdf",
-    "file:///private/reference.pdf",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/private/reference.pdf",
+        "C:\\private\\reference.pdf",
+        "\\\\host\\share\\book.pdf",
+        "file:///private/reference.pdf",
+    ],
+)
 def test_provenance_rejects_paths_but_prompt_data_accepts_path_like_text(path: str) -> None:
     text = f"Local source ({path})"
     with pytest.raises(ValueError, match="document_title"):
@@ -329,11 +370,21 @@ def test_path_guard_accepts_profiles_urls_and_normal_prose() -> None:
     assert prompt.chart_facts == (fact,)
 
 
-@pytest.mark.parametrize("phrase", [
-    "**yes**/**no**", "*yes*/*no*", "`yes`/`no`", "***yes***/***no***",
-    "**yes**/no", "yes/**no**", "**yes**/*no*", "**是**/**否**",
-    "**4/6**/**1/3**", "**respond first**/**wait for clarity**",
-])
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "**yes**/**no**",
+        "*yes*/*no*",
+        "`yes`/`no`",
+        "***yes***/***no***",
+        "**yes**/no",
+        "yes/**no**",
+        "**yes**/*no*",
+        "**是**/**否**",
+        "**4/6**/**1/3**",
+        "**respond first**/**wait for clarity**",
+    ],
+)
 def test_public_answer_accepts_markdown_slash_prose_without_rewriting(phrase: str) -> None:
     text = f"Consider {phrase}. [S1]"
     warning = f"The {phrase} distinction is only a reflection."
@@ -342,11 +393,21 @@ def test_public_answer_accepts_markdown_slash_prose_without_rewriting(phrase: st
     assert answer.warnings == (warning,)
 
 
-@pytest.mark.parametrize("phrase", [
-    "“uh-huh”/agreement", "“uh-uh”/resistance", "“yes”/“no”",
-    "‘yes’/response", '"yes"/response', "'yes'/response",
-    "「是」/回應", "『是』/『否』", "**“yes”**/response", "“**yes**”/response",
-])
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "“uh-huh”/agreement",
+        "“uh-uh”/resistance",
+        "“yes”/“no”",
+        "‘yes’/response",
+        '"yes"/response',
+        "'yes'/response",
+        "「是」/回應",
+        "『是』/『否』",
+        "**“yes”**/response",
+        "“**yes**”/response",
+    ],
+)
 def test_public_answer_accepts_quoted_slash_prose_without_rewriting(phrase: str) -> None:
     # Synthetic reproduction of the live failure: a closing quote before '/'
     # was mistaken for the start of an absolute filesystem path.
@@ -357,14 +418,28 @@ def test_public_answer_accepts_quoted_slash_prose_without_rewriting(phrase: str)
     assert answer.warnings == (warning,)
 
 
-@pytest.mark.parametrize("path", [
-    "“/private/chart.png”", "‘/private/chart.png’", "「/private/chart.png」",
-    "**“/private/chart.png”**", "prefix“/private/chart.png”", "“C:/private/chart.png”",
-    "/private/chart.png", "**/private/chart.png**", "`/private/chart.png`",
-    "/**private**/chart.png", "prefix**/private/chart.png**",
-    r"C:\private\chart.png", r"**C:\private\chart.png**", "C:/**private**/chart.png",
-    r"\\host\share\chart.png", "file:///private/chart.png", "[chart](/private/chart.png)",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "“/private/chart.png”",
+        "‘/private/chart.png’",
+        "「/private/chart.png」",
+        "**“/private/chart.png”**",
+        "prefix“/private/chart.png”",
+        "“C:/private/chart.png”",
+        "/private/chart.png",
+        "**/private/chart.png**",
+        "`/private/chart.png`",
+        "/**private**/chart.png",
+        "prefix**/private/chart.png**",
+        r"C:\private\chart.png",
+        r"**C:\private\chart.png**",
+        "C:/**private**/chart.png",
+        r"\\host\share\chart.png",
+        "file:///private/chart.png",
+        "[chart](/private/chart.png)",
+    ],
+)
 @pytest.mark.parametrize("field_name", ["answer_markdown", "warnings"])
 def test_public_answer_still_rejects_real_paths_with_markdown(path: str, field_name: str) -> None:
     values = {"answer_markdown": "Reflective explanation [S1].", "warnings": ()}
@@ -375,41 +450,63 @@ def test_public_answer_still_rejects_real_paths_with_markdown(path: str, field_n
     assert path not in str(caught.value)
 
 
-@pytest.mark.parametrize("unsafe", [
-    "![chart](https://attacker.invalid/leak.png)", "![chart](leak.png)", "[guide](guide.html)",
-    "![chart][ref]\n\n[ref]: https://attacker.invalid/leak.png", "[ref]: <leak.png>",
-    "<https://example.invalid/guide>", "<mailto:someone@example.invalid>",
-    "HTTPS://EXAMPLE.INVALID/guide", "ftp://example.invalid/guide", "www.example.invalid",
-])
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "![chart](https://attacker.invalid/leak.png)",
+        "![chart](leak.png)",
+        "[guide](guide.html)",
+        "![chart][ref]\n\n[ref]: https://attacker.invalid/leak.png",
+        "[ref]: <leak.png>",
+        "<https://example.invalid/guide>",
+        "<mailto:someone@example.invalid>",
+        "HTTPS://EXAMPLE.INVALID/guide",
+        "ftp://example.invalid/guide",
+        "www.example.invalid",
+    ],
+)
 def test_public_answer_rejects_markdown_links_images_and_urls(unsafe: str) -> None:
     with pytest.raises(UnsafeMarkdownError, match="links, images, or URLs") as caught:
         AnswerResult(AnswerStatus.OK, f"Reflective explanation [S1].\n\n{unsafe}")
     assert unsafe not in str(caught.value)
 
 
-@pytest.mark.parametrize("text", [
-    "Respond first [S1, S2]: then wait.", "[S1]: Projectors wait for the invitation.",
-    "Profile 1/3 [S1] (reflective).", "Notice your response! [S1]", "A [bracketed note] (aside) [S1].",
-    "Gate 5.2 and Channel 34-20 [S1].",
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Respond first [S1, S2]: then wait.",
+        "[S1]: Projectors wait for the invitation.",
+        "Profile 1/3 [S1] (reflective).",
+        "Notice your response! [S1]",
+        "A [bracketed note] (aside) [S1].",
+        "Gate 5.2 and Channel 34-20 [S1].",
+    ],
+)
 def test_public_answer_accepts_citation_prose_that_is_not_a_link(text: str) -> None:
     assert AnswerResult(AnswerStatus.OK, text).answer_markdown == text
 
 
 def test_prose_normalization_does_not_relax_structured_provenance() -> None:
     with pytest.raises(ValueError, match="document_title"):
-        SourceCitation("S1", "chunk-42", "reference.pdf",
-                       document_title="“reference”/private/chart.png")
+        SourceCitation("S1", "chunk-42", "reference.pdf", document_title="“reference”/private/chart.png")
 
 
 def test_citation_and_answer_exclude_internal_provenance() -> None:
     citation = SourceCitation("S1", "chunk-42", "reference.pdf", "Synthetic Reference", "7", 7)
     assert {item.name for item in fields(citation)} == {
-        "citation_id", "chunk_id", "source_file", "document_title", "page_label", "page_number",
+        "citation_id",
+        "chunk_id",
+        "source_file",
+        "document_title",
+        "page_label",
+        "page_number",
     }
     answer = AnswerResult(
-        status=AnswerStatus.OK, answer_markdown="Synthetic explanation [S1].",
-        citations=[citation], chart_facts_used=[_fact()], warnings=["SAFE_WARNING"],
+        status=AnswerStatus.OK,
+        answer_markdown="Synthetic explanation [S1].",
+        citations=[citation],
+        chart_facts_used=[_fact()],
+        warnings=["SAFE_WARNING"],
     )
     output = json.loads(json.dumps(asdict(answer), allow_nan=False))
     assert set(output) == {"status", "answer_markdown", "citations", "chart_facts_used", "warnings"}
@@ -422,9 +519,14 @@ def test_citation_and_answer_exclude_internal_provenance() -> None:
 
 
 def test_answer_status_has_exactly_the_six_contract_values() -> None:
-    expected = {"OK": "ok", "INSUFFICIENT_EVIDENCE": "insufficient_evidence",
-                "INVALID_CHART": "invalid_chart", "NEEDS_FOCUS": "needs_focus",
-                "REFUSED": "refused", "ERROR": "error"}
+    expected = {
+        "OK": "ok",
+        "INSUFFICIENT_EVIDENCE": "insufficient_evidence",
+        "INVALID_CHART": "invalid_chart",
+        "NEEDS_FOCUS": "needs_focus",
+        "REFUSED": "refused",
+        "ERROR": "error",
+    }
     assert {status.name: status.value for status in AnswerStatus} == expected
     for status in AnswerStatus:
         answer = AnswerResult(status=status, answer_markdown="")

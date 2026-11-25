@@ -17,9 +17,7 @@ from human_design.vision.parser import BodyGraphParseError
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts/extract_bodygraph.py"
 IMAGE_PATH = REPO_ROOT / "tests/fixtures/bodygraph/test1.png"
-MOCK_RESPONSE_PATH = (
-    REPO_ROOT / "tests/fixtures/bodygraph/test1_raw_response.json"
-)
+MOCK_RESPONSE_PATH = REPO_ROOT / "tests/fixtures/bodygraph/test1_raw_response.json"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 FAKE_API_KEY = "fake-api-key-that-must-never-be-printed"
 FAKE_BASE64 = "A" * 180
@@ -185,10 +183,7 @@ def test_real_client_passes_model_and_reasoning_effort_separately(
         "reason",
         "confidence",
     }
-    observed_value_types = {
-        option["type"]
-        for option in uncertain_item["properties"]["observed_value"]["anyOf"]
-    }
+    observed_value_types = {option["type"] for option in uncertain_item["properties"]["observed_value"]["anyOf"]}
     assert observed_value_types == {"string", "integer", "number", "null"}
     final_human_design_fields = {
         "type",
@@ -228,8 +223,7 @@ def _mock_provider_failure(
     failure_stage: str,
 ) -> RuntimeError:
     provider_error = RuntimeError(
-        f"private provider response; credential={FAKE_API_KEY}; "
-        f"request_payload=data:image/png;base64,{FAKE_BASE64}"
+        f"private provider response; credential={FAKE_API_KEY}; request_payload=data:image/png;base64,{FAKE_BASE64}"
     )
 
     class FakeResponses:
@@ -260,9 +254,7 @@ def test_real_client_sanitizes_provider_errors(
         )
 
     assert exc_info.value.__cause__ is provider_error
-    assert str(exc_info.value) == (
-        "Vision API request failed. Check your API configuration and try again."
-    )
+    assert str(exc_info.value) == ("Vision API request failed. Check your API configuration and try again.")
 
 
 @pytest.mark.parametrize("failure_stage", ["initialization", "request"])
@@ -284,8 +276,7 @@ def test_cli_sanitizes_provider_errors(
     assert status == 1
     assert captured.out == ""
     assert captured.err == (
-        "BodyGraph extraction failed: Vision API request failed. "
-        "Check your API configuration and try again.\n"
+        "BodyGraph extraction failed: Vision API request failed. Check your API configuration and try again.\n"
     )
 
 
@@ -296,9 +287,7 @@ def test_cli_does_not_print_unexpected_exception_details(
     json_mode: bool,
 ) -> None:
     module = _load_cli_module()
-    monkeypatch.setattr(
-        module, "load_vision_config", lambda: _config(real_api_enabled=False)
-    )
+    monkeypatch.setattr(module, "load_vision_config", lambda: _config(real_api_enabled=False))
 
     def fail_extraction(**kwargs: object) -> None:
         try:
@@ -372,9 +361,7 @@ def test_cli_delegates_to_official_pipeline(
     monkeypatch.setattr(module, "load_vision_config", lambda: config)
     monkeypatch.setattr(module, "extract_bodygraph", fake_extract_bodygraph)
 
-    status = module.main(
-        [str(IMAGE_PATH), "--mock-response", str(MOCK_RESPONSE_PATH), "--json"]
-    )
+    status = module.main([str(IMAGE_PATH), "--mock-response", str(MOCK_RESPONSE_PATH), "--json"])
     payload = json.loads(capsys.readouterr().out)
 
     assert status == 0

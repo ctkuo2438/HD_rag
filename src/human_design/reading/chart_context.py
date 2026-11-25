@@ -22,19 +22,31 @@ def build_chart_context(bodygraph_result: BodyGraphExtractionResult) -> ChartCon
     derived = bodygraph_result.derived_chart_data
     # A placeholder such as "Needs Review" is not a chart fact. Projecting it would let
     # retrieval and the model treat it as a real Authority; its warning code remains.
-    facts = [ChartFact(name, value, f"derived_chart_data.basic_info.{name}")
-             for name in ("type", "authority", "profile", "strategy", "definition", "not_self_theme", "signature")
-             if (value := getattr(derived.basic_info, name)) not in UNRESOLVED_BASIC_INFO_VALUES]
-    facts.extend(ChartFact("active_gate", gate, f"derived_chart_data.active_gates[gate={gate}]")
-                 for gate in sorted(set(derived.active_gates)))
-    facts.extend(ChartFact("active_channel", channel, f"derived_chart_data.active_channels[channel={channel}]")
-                 for channel in ALL_CHANNELS if channel in derived.active_channels)
+    facts = [
+        ChartFact(name, value, f"derived_chart_data.basic_info.{name}")
+        for name in ("type", "authority", "profile", "strategy", "definition", "not_self_theme", "signature")
+        if (value := getattr(derived.basic_info, name)) not in UNRESOLVED_BASIC_INFO_VALUES
+    ]
+    facts.extend(
+        ChartFact("active_gate", gate, f"derived_chart_data.active_gates[gate={gate}]")
+        for gate in sorted(set(derived.active_gates))
+    )
+    facts.extend(
+        ChartFact("active_channel", channel, f"derived_chart_data.active_channels[channel={channel}]")
+        for channel in ALL_CHANNELS
+        if channel in derived.active_channels
+    )
     for defined in (True, False):
         for center in CANONICAL_CENTERS:
             if (center in derived.defined_centers) == defined:
                 selector = "center" if defined else "complement_center"
-                facts.append(ChartFact("defined_center" if defined else "undefined_center", center,
-                    f"derived_chart_data.defined_centers[{selector}={center}]"))
+                facts.append(
+                    ChartFact(
+                        "defined_center" if defined else "undefined_center",
+                        center,
+                        f"derived_chart_data.defined_centers[{selector}={center}]",
+                    )
+                )
     for column in ("personality", "design"):
         for planet in PLANETARY_FIELDS:
             activation = getattr(getattr(bodygraph_result.raw_vision, column), planet)

@@ -30,7 +30,8 @@ _ALIASES = (
     ("Manifesting Generator", ("顯示生產者", "显示生产者")),
     ("Generator", ("生產者", "生产者")),
     ("Manifestor", ("顯示者", "显示者")),
-    ("Projector", ("投射者",)), ("Reflector", ("反映者",)),
+    ("Projector", ("投射者",)),
+    ("Reflector", ("反映者",)),
     ("Sacral Authority", ("薦骨權威", "荐骨权威")),
     ("Emotional Authority", ("情緒權威", "情绪权威", "Solar Plexus Authority")),
     ("Solar Plexus Authority", ("情緒權威", "情绪权威", "Emotional Authority")),
@@ -42,28 +43,45 @@ _ALIASES = (
     ("Head", ("頭頂中心", "头顶中心", "Head Center")),
     ("Ajna", ("邏輯中心", "逻辑中心", "Ajna Center")),
     ("Throat", ("喉嚨中心", "喉咙中心", "Throat Center")),
-    (_G_CENTER, tuple(alias for alias, center in CENTER_ALIASES.items() if center == _G_CENTER)
-     + ("G中心", "自我中心")),
-    (_EGO_CENTER, tuple(alias for alias, center in CENTER_ALIASES.items() if center == _EGO_CENTER)
-     + ("意志力中心", "心臟中心", "心脏中心", "Heart Center", "Ego Center")),
+    (
+        _G_CENTER,
+        tuple(alias for alias, center in CENTER_ALIASES.items() if center == _G_CENTER) + ("G中心", "自我中心"),
+    ),
+    (
+        _EGO_CENTER,
+        tuple(alias for alias, center in CENTER_ALIASES.items() if center == _EGO_CENTER)
+        + ("意志力中心", "心臟中心", "心脏中心", "Heart Center", "Ego Center"),
+    ),
     ("Sacral", ("薦骨中心", "荐骨中心", "Sacral Center")),
     ("Solar Plexus", ("情緒中心", "情绪中心", "Solar Plexus Center")),
     ("Spleen", ("脾臟中心", "脾脏中心", "Spleen Center")),
     ("Root", ("根部中心", "Root Center")),
-    ("Personality", ("人格", "意識", "意识")), ("Design", ("設計", "设计")),
-    ("Sun", ("太陽", "太阳")), ("Earth", ("地球",)), ("Moon", ("月亮",)),
-    ("North Node", ("北交點", "北交点")), ("South Node", ("南交點", "南交点")),
-    ("Mercury", ("水星",)), ("Venus", ("金星",)), ("Mars", ("火星",)),
-    ("Jupiter", ("木星",)), ("Saturn", ("土星",)), ("Uranus", ("天王星",)),
-    ("Neptune", ("海王星",)), ("Pluto", ("冥王星",)), ("Line", ("爻",)),
+    ("Personality", ("人格", "意識", "意识")),
+    ("Design", ("設計", "设计")),
+    ("Sun", ("太陽", "太阳")),
+    ("Earth", ("地球",)),
+    ("Moon", ("月亮",)),
+    ("North Node", ("北交點", "北交点")),
+    ("South Node", ("南交點", "南交点")),
+    ("Mercury", ("水星",)),
+    ("Venus", ("金星",)),
+    ("Mars", ("火星",)),
+    ("Jupiter", ("木星",)),
+    ("Saturn", ("土星",)),
+    ("Uranus", ("天王星",)),
+    ("Neptune", ("海王星",)),
+    ("Pluto", ("冥王星",)),
+    ("Line", ("爻",)),
 )
 _GATE = re.compile(
     r"\b(?:Gate|Hexagram)\s*#?\s*(\d{1,2})\b|\b(\d{1,2})(?:st|nd|rd|th)\s+Gate\b"
-    r"|(\d{1,2})\s*(?:號|号)?\s*(?:閘門|闸门)", re.I,
+    r"|(\d{1,2})\s*(?:號|号)?\s*(?:閘門|闸门)",
+    re.I,
 )
 _PROFILE = re.compile(
     r"\bProfile\s*([1-6])\s*[/\-]\s*([1-6])(?!\d)"
-    r"|(?<!\d)([1-6])\s*[/\-]\s*([1-6])\s*(?:Profile\b|人生角色)", re.I,
+    r"|(?<!\d)([1-6])\s*[/\-]\s*([1-6])\s*(?:Profile\b|人生角色)",
+    re.I,
 )
 _CHANNEL = re.compile(
     r"(?<!\d)(\d{1,2})\s*(?:[-–—]|(?:號|号)?\s*(?:與|与))\s*(\d{1,2})(?!\d)",
@@ -130,12 +148,19 @@ def build_and_persist_bm25(nodes: list[BaseNode], persist_dir: Path, ingestion_i
             node.excluded_llm_metadata_keys.append("ingestion_id")
     try:
         retriever = BM25Retriever.from_defaults(
-            nodes=nodes, similarity_top_k=min(2, len(nodes)), token_pattern=_TOKEN_PATTERN, verbose=False,
+            nodes=nodes,
+            similarity_top_k=min(2, len(nodes)),
+            token_pattern=_TOKEN_PATTERN,
+            verbose=False,
         )
         persist_dir.mkdir(parents=True, exist_ok=True)
         retriever.persist(str(persist_dir), show_progress=False)
-        identity = {"ingestion_id": ingestion_id, "chunk_count": len(nodes),
-                    "chunk_ids": [node.node_id for node in nodes], "token_pattern": _TOKEN_PATTERN}
+        identity = {
+            "ingestion_id": ingestion_id,
+            "chunk_count": len(nodes),
+            "chunk_ids": [node.node_id for node in nodes],
+            "token_pattern": _TOKEN_PATTERN,
+        }
         with (persist_dir / "identity.json").open("x", encoding="utf-8") as output:
             output.write(canonical_json(identity) + "\n")
     except Exception:
@@ -196,10 +221,18 @@ class BM25RetrieverAdapter:
             metadata = safe_source_metadata(match.node.metadata)
             if metadata.get("chunk_id") != match.node.node_id or "source_file" not in metadata:
                 raise HybridIndexError("BM25 result lacks canonical source identity")
-            results.append(RetrievedChunk(
-                chunk_id=match.node.node_id, text=match.node.get_content(metadata_mode=MetadataMode.NONE),
-                source_file=metadata["source_file"], source_relpath=metadata.get("source_relpath"),
-                document_title=metadata.get("document_title"), page_label=metadata.get("page_label"),
-                page_number=metadata.get("page_number"), sparse_rank=rank, sparse_score=match.score, metadata=metadata,
-            ))
+            results.append(
+                RetrievedChunk(
+                    chunk_id=match.node.node_id,
+                    text=match.node.get_content(metadata_mode=MetadataMode.NONE),
+                    source_file=metadata["source_file"],
+                    source_relpath=metadata.get("source_relpath"),
+                    document_title=metadata.get("document_title"),
+                    page_label=metadata.get("page_label"),
+                    page_number=metadata.get("page_number"),
+                    sparse_rank=rank,
+                    sparse_score=match.score,
+                    metadata=metadata,
+                )
+            )
         return results

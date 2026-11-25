@@ -146,9 +146,7 @@ def _visible_channel_warnings(
         # Reachable via the public components API: RawVisionExtraction does
         # not constrain channel strings, only the parser does.
         if channel not in _ALL_CHANNELS_SET:
-            warnings.append(
-                _validation_warning(ValidationCode.INVALID_VISIBLE_CHANNEL, field_path)
-            )
+            warnings.append(_validation_warning(ValidationCode.INVALID_VISIBLE_CHANNEL, field_path))
             continue
         if channel not in derived_channels:
             warnings.append(
@@ -225,10 +223,7 @@ def _unsupported_authority_warnings(
 ) -> tuple[ValidationWarning, ...]:
     if derived_chart_data.basic_info.authority not in UNRESOLVED_BASIC_INFO_VALUES:
         return ()
-    if any(
-        warning.code is ValidationCode.UNSUPPORTED_AUTHORITY
-        for warning in existing_warnings
-    ):
+    if any(warning.code is ValidationCode.UNSUPPORTED_AUTHORITY for warning in existing_warnings):
         return ()
     return (
         _validation_warning(

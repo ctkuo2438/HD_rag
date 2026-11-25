@@ -14,8 +14,12 @@ from human_design.rag.config import load_config
 from human_design.rag.models import RetrievedChunk
 from human_design.rag.reranker import NoOpReranker
 from human_design.reading.models import (
-    AnswerResult, AnswerStatus, ChartFact, ChartImageQuestionRequest,
-    KnowledgeQuestionRequest, SourceCitation,
+    AnswerResult,
+    AnswerStatus,
+    ChartFact,
+    ChartImageQuestionRequest,
+    KnowledgeQuestionRequest,
+    SourceCitation,
 )
 from human_design.reading.pipeline import ReadingPipeline, ReadingPipelineError
 from human_design.reading.prompt import build_source_citations
@@ -28,8 +32,10 @@ from human_design.vision.validation import validate_bodygraph_extraction
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/streamlit_app.py"
 OFFLINE = {
-    "HD_RAG_REAL_EMBEDDINGS": "0", "HD_RAG_REAL_GENERATION": "0",
-    "HD_RAG_RERANK_PROVIDER": "none", "HD_RAG_REAL_RERANK_API": "0",
+    "HD_RAG_REAL_EMBEDDINGS": "0",
+    "HD_RAG_REAL_GENERATION": "0",
+    "HD_RAG_RERANK_PROVIDER": "none",
+    "HD_RAG_REAL_RERANK_API": "0",
     "HD_VISION_REAL_API": "0",
 }
 PRIVATE = "fake-key base64-private birth-date-1901 /private/chart.png full-private-passage"
@@ -43,8 +49,15 @@ def offline(monkeypatch, tmp_path):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     forbidden = Mock(side_effect=AssertionError("No providers or production storage in UI tests"))
-    for name in ("load_dense_retriever", "load_bm25_retriever", "load_manifest",
-                 "load_nodes", "extract_bodygraph", "create_reranker", "generate_answer"):
+    for name in (
+        "load_dense_retriever",
+        "load_bm25_retriever",
+        "load_manifest",
+        "load_nodes",
+        "extract_bodygraph",
+        "create_reranker",
+        "generate_answer",
+    ):
         monkeypatch.setattr("human_design.reading.pipeline." + name, forbidden)
     yield forbidden
     forbidden.assert_not_called()
@@ -54,7 +67,8 @@ def result(status=AnswerStatus.OK):
     if status is not AnswerStatus.OK:
         return AnswerResult(status, "Please choose a focused topic or check the available evidence.")
     return AnswerResult(
-        status, "A reflective answer with a useful citation. [S1]",
+        status,
+        "A reflective answer with a useful citation. [S1]",
         citations=(SourceCitation("S1", "canonical-test-id", "reference.pdf", page_number=7),),
         chart_facts_used=(ChartFact("authority", "Sacral", "derived_chart_data.basic_info.authority"),),
         warnings=("This is reflective information.",),
@@ -89,9 +103,11 @@ def submit(at, query="How should I make decisions?"):
 
 
 def visible(at):
-    return "\n".join(str(element.value) for kind in
-                     ("markdown", "text", "caption", "info", "warning", "error", "exception")
-                     for element in at.get(kind))
+    return "\n".join(
+        str(element.value)
+        for kind in ("markdown", "text", "caption", "info", "warning", "error", "exception")
+        for element in at.get(kind)
+    )
 
 
 def test_initial_load_and_editing_do_not_construct_a_pipeline(fake):
@@ -111,8 +127,7 @@ def test_knowledge_answer_renders_only_public_results_and_does_not_repeat_on_rer
     service, constructor = fake
     at = submit(app(), "  What is Sacral Authority?  ")
     assert not at.exception and not at.error
-    service.answer_knowledge_question.assert_called_once_with(
-        KnowledgeQuestionRequest("What is Sacral Authority?"))
+    service.answer_knowledge_question.assert_called_once_with(KnowledgeQuestionRequest("What is Sacral Authority?"))
     service.answer_chart_image_question.assert_not_called()
     text = visible(at)
     for expected in ("A reflective answer", "[S1]", "reference.pdf", "7", "Sacral", "reflective information"):
@@ -182,13 +197,18 @@ def test_exactly_2000_characters_can_be_submitted(fake):
     service.answer_knowledge_question.assert_called_once_with(KnowledgeQuestionRequest("界" * 2000))
 
 
-@pytest.mark.parametrize("name,size", [
-    ("private.txt", 10), ("chart.png", 0), ("chart.png", 20 * 1024 * 1024 + 1),
-], ids=["unsupported-type", "empty-file", "over-limit"])
+@pytest.mark.parametrize(
+    "name,size",
+    [
+        ("private.txt", 10),
+        ("chart.png", 0),
+        ("chart.png", 20 * 1024 * 1024 + 1),
+    ],
+    ids=["unsupported-type", "empty-file", "over-limit"],
+)
 def test_invalid_upload_stops_before_reading_bytes_or_constructing_pipeline(fake, name, size):
     _, constructor = fake
-    upload = SimpleNamespace(name=name, size=size,
-                             getvalue=Mock(side_effect=AssertionError("must not read")))
+    upload = SimpleNamespace(name=name, size=size, getvalue=Mock(side_effect=AssertionError("must not read")))
     module = app_module()
     with pytest.raises(module.InvalidUploadError) as caught:
         module._answer("What is Authority?", upload)
@@ -197,9 +217,13 @@ def test_invalid_upload_stops_before_reading_bytes_or_constructing_pipeline(fake
     constructor.assert_not_called()
 
 
-@pytest.mark.parametrize("query", [
-    "Give me a complete reading of my chart.", "完整解讀我的人類圖",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Give me a complete reading of my chart.",
+        "完整解讀我的人類圖",
+    ],
+)
 @pytest.mark.parametrize("with_image", [False, True])
 def test_broad_question_uses_existing_guard_without_providers(query, with_image):
     at = app()
@@ -210,9 +234,14 @@ def test_broad_question_uses_existing_guard_without_providers(query, with_image)
     assert at.info and "specific topic" in visible(at)
 
 
-@pytest.mark.parametrize("status", [
-    AnswerStatus.INVALID_CHART, AnswerStatus.INSUFFICIENT_EVIDENCE, AnswerStatus.NEEDS_FOCUS,
-])
+@pytest.mark.parametrize(
+    "status",
+    [
+        AnswerStatus.INVALID_CHART,
+        AnswerStatus.INSUFFICIENT_EVIDENCE,
+        AnswerStatus.NEEDS_FOCUS,
+    ],
+)
 def test_normal_non_answer_results_are_shown_without_tracebacks(fake, status):
     service, _ = fake
     service.answer_knowledge_question.return_value = result(status)
@@ -236,20 +265,26 @@ def test_new_failure_clears_the_previous_answer_and_hides_private_error(fake, ca
 def test_safe_operational_error_keeps_actionable_configuration_hint(fake):
     service, _ = fake
     service.answer_knowledge_question.side_effect = ReadingPipelineError(
-        "Enable HD_RAG_REAL_GENERATION=1 for real generation")
+        "Enable HD_RAG_REAL_GENERATION=1 for real generation"
+    )
     at = submit(app())
     assert at.error and not at.exception
     assert "HD_RAG_REAL_GENERATION" in visible(at)
 
 
-@pytest.mark.parametrize("with_image,variable", [
-    (False, "HD_RAG_REAL_EMBEDDINGS"), (True, "HD_VISION_REAL_API"),
-])
+@pytest.mark.parametrize(
+    "with_image,variable",
+    [
+        (False, "HD_RAG_REAL_EMBEDDINGS"),
+        (True, "HD_VISION_REAL_API"),
+    ],
+)
 def test_process_offline_flags_override_dotenv_opt_ins(monkeypatch, tmp_path, with_image, variable):
     (tmp_path / ".env").write_text(
         "OPENAI_API_KEY=fake-key\nCOHERE_API_KEY=fake-cohere-key\n"
         "HD_RAG_REAL_EMBEDDINGS=1\nHD_RAG_REAL_GENERATION=1\n"
-        "HD_RAG_RERANK_PROVIDER=cohere\nHD_RAG_REAL_RERANK_API=1\nHD_VISION_REAL_API=1\n")
+        "HD_RAG_RERANK_PROVIDER=cohere\nHD_RAG_REAL_RERANK_API=1\nHD_VISION_REAL_API=1\n"
+    )
     monkeypatch.chdir(tmp_path)
     at = app()
     if with_image:
@@ -263,7 +298,8 @@ def test_process_offline_flags_override_dotenv_opt_ins(monkeypatch, tmp_path, wi
 def test_answer_markdown_never_enables_raw_html(fake):
     service, _ = fake
     service.answer_knowledge_question.return_value = AnswerResult(
-        AnswerStatus.OK, '<img src="x" onerror="alert(1)">Reflective answer [S1]',
+        AnswerStatus.OK,
+        '<img src="x" onerror="alert(1)">Reflective answer [S1]',
         citations=result().citations,
     )
     at = submit(app())
@@ -276,27 +312,49 @@ def chart_flow(monkeypatch):
     raw = (Path(__file__).parent / "fixtures/bodygraph/test1_raw_response.json").read_text()
     parsed = parse_bodygraph_raw_extraction_json(raw)
     derived = interpret_bodygraph(parsed.raw_vision)
-    chart = BodyGraphExtractionResult(parsed.raw_vision, derived.derived_chart_data,
-        validate_bodygraph_extraction(parse_result=parsed, interpretation_result=derived))
+    chart = BodyGraphExtractionResult(
+        parsed.raw_vision,
+        derived.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=parsed, interpretation_result=derived),
+    )
     assert chart.validation_result.is_valid
     extractor = Mock(return_value=chart)
 
     def retriever(backend):
-        return SimpleNamespace(ingestion_id="same-test-ingestion", retrieve=Mock(return_value=[
-            RetrievedChunk("test-chunk", "Synthetic reference passage.", "reference.pdf",
-                           **{f"{backend}_rank": 1, f"{backend}_score": 0.7})]))
+        return SimpleNamespace(
+            ingestion_id="same-test-ingestion",
+            retrieve=Mock(
+                return_value=[
+                    RetrievedChunk(
+                        "test-chunk",
+                        "Synthetic reference passage.",
+                        "reference.pdf",
+                        **{f"{backend}_rank": 1, f"{backend}_score": 0.7},
+                    )
+                ]
+            ),
+        )
 
     def generate(prompt, config):
-        return AnswerResult(AnswerStatus.OK, "A reflective answer. [S1]",
-                            citations=build_source_citations(prompt), chart_facts_used=prompt.chart_facts)
+        return AnswerResult(
+            AnswerStatus.OK,
+            "A reflective answer. [S1]",
+            citations=build_source_citations(prompt),
+            chart_facts_used=prompt.chart_facts,
+        )
 
     dense, sparse = retriever("dense"), retriever("sparse")
     generator = Mock(side_effect=generate)
-    service = ReadingPipeline(config=load_config(env={}), extractor=extractor,
-        dense_retriever=dense, sparse_retriever=sparse, reranker=NoOpReranker(), generator=generator)
+    service = ReadingPipeline(
+        config=load_config(env={}),
+        extractor=extractor,
+        dense_retriever=dense,
+        sparse_retriever=sparse,
+        reranker=NoOpReranker(),
+        generator=generator,
+    )
     monkeypatch.setattr("human_design.reading.ReadingPipeline", Mock(return_value=service))
-    return SimpleNamespace(chart=chart, extractor=extractor, generator=generator,
-                           dense=dense, sparse=sparse)
+    return SimpleNamespace(chart=chart, extractor=extractor, generator=generator, dense=dense, sparse=sparse)
 
 
 def test_same_image_reuses_validated_chart_but_reselects_facts_and_answers(chart_flow, monkeypatch):
@@ -351,14 +409,17 @@ def test_chart_cache_is_not_shared_between_browser_sessions(chart_flow):
 
 @pytest.mark.parametrize("failure", ["invalid-chart", "extraction-error"])
 def test_failed_or_invalid_extractions_are_not_cached(chart_flow, failure, caplog):
-    raw = replace(chart_flow.chart.raw_vision,
-                  personality=replace(chart_flow.chart.raw_vision.personality, sun=None))
+    raw = replace(chart_flow.chart.raw_vision, personality=replace(chart_flow.chart.raw_vision.personality, sun=None))
     derived = interpret_bodygraph(raw)
-    invalid = BodyGraphExtractionResult(raw, derived.derived_chart_data,
-        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=derived))
+    invalid = BodyGraphExtractionResult(
+        raw,
+        derived.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=ParseResult(raw), interpretation_result=derived),
+    )
     assert not invalid.validation_result.is_valid
     chart_flow.extractor.side_effect = [
-        invalid if failure == "invalid-chart" else RuntimeError(PRIVATE), chart_flow.chart,
+        invalid if failure == "invalid-chart" else RuntimeError(PRIVATE),
+        chart_flow.chart,
     ]
     at = app()
     at.file_uploader[0].set_value(("chart.png", b"retry-image", "image/png"))

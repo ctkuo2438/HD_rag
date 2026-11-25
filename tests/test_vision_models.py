@@ -85,9 +85,7 @@ def _activation_column(
     missing_field: str | None = None,
 ) -> PersonalityActivationColumn | DesignActivationColumn:
     values = {
-        field_name: None
-        if field_name == missing_field
-        else Activation(gate=index + 1, line=(index % 6) + 1)
+        field_name: None if field_name == missing_field else Activation(gate=index + 1, line=(index % 6) + 1)
         for index, field_name in enumerate(PLANET_FIELDS)
     }
     constructor = cast(Any, model)
@@ -425,15 +423,12 @@ def test_every_validation_code_has_registered_warning_defaults() -> None:
 @pytest.mark.parametrize("code", list(ValidationCode))
 @pytest.mark.parametrize("conflicting_field", ["severity", "affects_validity", "both"])
 def test_validation_warning_rejects_noncanonical_metadata(
-    code: ValidationCode, conflicting_field: str,
+    code: ValidationCode,
+    conflicting_field: str,
 ) -> None:
     severity, affects_validity = warning_defaults(code)
     if conflicting_field in {"severity", "both"}:
-        severity = (
-            ValidationSeverity.ERROR
-            if severity is ValidationSeverity.INFO
-            else ValidationSeverity.INFO
-        )
+        severity = ValidationSeverity.ERROR if severity is ValidationSeverity.INFO else ValidationSeverity.INFO
     if conflicting_field in {"affects_validity", "both"}:
         affects_validity = not affects_validity
 
@@ -558,20 +553,10 @@ def test_missing_activation_scenarios_are_representable(
     # these warnings lives in the parser/validation tests; this pins that the
     # models can represent every scenario.
     if column_attr == "personality":
-        raw = _raw_vision(
-            personality=_activation_column(
-                PersonalityActivationColumn, missing_field=missing_field
-            )
-        )
+        raw = _raw_vision(personality=_activation_column(PersonalityActivationColumn, missing_field=missing_field))
     else:
-        raw = _raw_vision(
-            design=_activation_column(
-                DesignActivationColumn, missing_field=missing_field
-            )
-        )
-    validation = ValidationResult(
-        warnings=(_warning(code=code),)
-    )
+        raw = _raw_vision(design=_activation_column(DesignActivationColumn, missing_field=missing_field))
+    validation = ValidationResult(warnings=(_warning(code=code),))
 
     codes = tuple(warning.code for warning in validation.warnings)
     assert getattr(getattr(raw, column_attr), missing_field) is None

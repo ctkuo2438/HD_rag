@@ -11,7 +11,10 @@ from streamlit.typing import UploadedFile
 
 from human_design.rag.hybrid_index import HybridIndexError
 from human_design.reading import (
-    ChartImageQuestionRequest, ChartQuestionRequest, KnowledgeQuestionRequest, ReadingPipeline,
+    ChartImageQuestionRequest,
+    ChartQuestionRequest,
+    KnowledgeQuestionRequest,
+    ReadingPipeline,
 )
 from human_design.reading.models import AnswerResult, AnswerStatus
 from human_design.reading.pipeline import ReadingPipelineError
@@ -22,10 +25,17 @@ from human_design.vision.models import BodyGraphExtractionResult
 _IMAGE_TYPES = ("png", "jpg", "jpeg", "webp", "gif")
 _MAX_UPLOAD_MB = 20
 _FACT_LABELS = {
-    "type": "類型", "authority": "內在權威", "strategy": "策略",
-    "profile": "人生角色", "definition": "定義", "not_self_theme": "非自己主題",
-    "signature": "標誌", "active_gate": "啟動閘門", "active_channel": "啟動通道",
-    "defined_center": "已定義中心", "undefined_center": "未定義中心",
+    "type": "類型",
+    "authority": "內在權威",
+    "strategy": "策略",
+    "profile": "人生角色",
+    "definition": "定義",
+    "not_self_theme": "非自己主題",
+    "signature": "標誌",
+    "active_gate": "啟動閘門",
+    "active_channel": "啟動通道",
+    "defined_center": "已定義中心",
+    "undefined_center": "未定義中心",
 }
 
 
@@ -63,7 +73,8 @@ def _answer(query: str, upload: UploadedFile | None) -> AnswerResult:
         image_path = Path(directory) / ("bodygraph" + suffix)
         image_path.write_bytes(image_data)
         return ReadingPipeline().answer_chart_image_question(
-            ChartImageQuestionRequest(query, image_path), on_validated_chart=remember_chart)
+            ChartImageQuestionRequest(query, image_path), on_validated_chart=remember_chart
+        )
 
 
 def _show_answer(answer: AnswerResult) -> None:
@@ -97,11 +108,15 @@ def main() -> None:
 
     with st.form("question_form", enter_to_submit=False):
         query = st.text_area(
-            "你的問題", key="query", max_chars=MAX_QUERY_CHARACTERS,
+            "你的問題",
+            key="query",
+            max_chars=MAX_QUERY_CHARACTERS,
             placeholder="例如：我該如何做決定？或：什麼是薦骨權威？",
         )
         upload = st.file_uploader(
-            "人類圖圖片（選填）", type=list(_IMAGE_TYPES), key="bodygraph",
+            "人類圖圖片（選填）",
+            type=list(_IMAGE_TYPES),
+            key="bodygraph",
             max_upload_size=_MAX_UPLOAD_MB,
             help="上傳圖表可針對你的圖回答；未上傳時回答一般人類圖知識。單張圖片上限 20 MB。",
         )

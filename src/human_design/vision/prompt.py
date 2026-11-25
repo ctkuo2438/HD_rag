@@ -14,9 +14,7 @@ def load_bodygraph_raw_extraction_prompt() -> str:
     """Load the raw BodyGraph extraction prompt text from package data."""
     resource = files(_PROMPT_PACKAGE) / "prompts" / _PROMPT_RESOURCE
     if not resource.is_file():
-        raise FileNotFoundError(
-            f"BodyGraph extraction prompt not found: {resource}"
-        )
+        raise FileNotFoundError(f"BodyGraph extraction prompt not found: {resource}")
     return resource.read_text(encoding="utf-8")
 
 

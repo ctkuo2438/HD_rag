@@ -25,7 +25,8 @@ class _SafeArgumentParser(argparse.ArgumentParser):
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = _SafeArgumentParser(
-        prog="ask_human_design.py", allow_abbrev=False,
+        prog="ask_human_design.py",
+        allow_abbrev=False,
         description="Ask one focused Human Design question; full readings are deferred.",
     )
     parser.add_argument("query", help="One focused question (at most 2,000 Python characters).")

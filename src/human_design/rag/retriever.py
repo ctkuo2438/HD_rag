@@ -35,15 +35,26 @@ class DenseRetrieverAdapter:
         results = []
         for rank, match in enumerate(matches, 1):
             metadata = safe_source_metadata(match.node.metadata)
-            if (metadata.get("chunk_id") != match.node.node_id or "source_file" not in metadata
-                    or match.node.metadata.get("ingestion_id") != self.ingestion_id):
+            if (
+                metadata.get("chunk_id") != match.node.node_id
+                or "source_file" not in metadata
+                or match.node.metadata.get("ingestion_id") != self.ingestion_id
+            ):
                 raise HybridIndexError("Dense result lacks matching canonical ingestion identity")
-            results.append(RetrievedChunk(
-                chunk_id=match.node.node_id, text=match.node.get_content(metadata_mode=MetadataMode.NONE),
-                source_file=metadata["source_file"], source_relpath=metadata.get("source_relpath"),
-                document_title=metadata.get("document_title"), page_label=metadata.get("page_label"),
-                page_number=metadata.get("page_number"), dense_rank=rank, dense_score=match.score, metadata=metadata,
-            ))
+            results.append(
+                RetrievedChunk(
+                    chunk_id=match.node.node_id,
+                    text=match.node.get_content(metadata_mode=MetadataMode.NONE),
+                    source_file=metadata["source_file"],
+                    source_relpath=metadata.get("source_relpath"),
+                    document_title=metadata.get("document_title"),
+                    page_label=metadata.get("page_label"),
+                    page_number=metadata.get("page_number"),
+                    dense_rank=rank,
+                    dense_score=match.score,
+                    metadata=metadata,
+                )
+            )
         return results
 
 

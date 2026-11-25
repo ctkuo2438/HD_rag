@@ -25,18 +25,23 @@ from human_design.rag.retriever import load_dense_retriever
 def _format_metrics(metrics: RetrievalMetrics) -> str:
     def rate(value: float | None) -> str:
         return "n/a" if value is None else f"{value:.4f}"
-    return (f"Hit@5={rate(metrics.hit_at_5)} MRR@20={rate(metrics.mrr_at_20)} "
-            f"entity={rate(metrics.exact_entity_hit_rate)} source/page={rate(metrics.expected_source_page_hit_rate)}")
+
+    return (
+        f"Hit@5={rate(metrics.hit_at_5)} MRR@20={rate(metrics.mrr_at_20)} "
+        f"entity={rate(metrics.exact_entity_hit_rate)} source/page={rate(metrics.expected_source_page_hit_rate)}"
+    )
 
 
 def main(
-    argv: Sequence[str] | None = None, *,
-    retrievers: tuple[Retriever, Retriever] | None = None, config: AppConfig | None = None,
+    argv: Sequence[str] | None = None,
+    *,
+    retrievers: tuple[Retriever, Retriever] | None = None,
+    config: AppConfig | None = None,
 ) -> int:
     parser = argparse.ArgumentParser(
         description="Evaluate dense-only, BM25-only, and RRF hybrid retrieval.",
         epilog="Exit codes: 0 thresholds passed; 1 aggregate regression thresholds failed; "
-               "2 invalid input/config/index setup. Unlabeled metrics are excluded from thresholds.",
+        "2 invalid input/config/index setup. Unlabeled metrics are excluded from thresholds.",
     )
     parser.add_argument("--queries", type=Path, required=True, help="Sanitized query labels JSON.")
     args = parser.parse_args(argv)
@@ -61,8 +66,10 @@ def main(
         print(f"  aggregate: {_format_metrics(report.aggregate)}")
         for name in threshold_failures(report.aggregate):
             failed = True
-            print(f"  {mode}: threshold failure: {name}={getattr(report.aggregate, name):.4f} "
-                  f"< {REGRESSION_THRESHOLDS[name]:.4f}")
+            print(
+                f"  {mode}: threshold failure: {name}={getattr(report.aggregate, name):.4f} "
+                f"< {REGRESSION_THRESHOLDS[name]:.4f}"
+            )
     print("Regression thresholds FAILED" if failed else "Regression thresholds passed")
     return 1 if failed else 0
 

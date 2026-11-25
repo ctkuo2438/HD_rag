@@ -17,9 +17,7 @@ from human_design.vision.pipeline import extract_bodygraph
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Extract raw and deterministic facts from one BodyGraph image."
-    )
+    parser = argparse.ArgumentParser(description="Extract raw and deterministic facts from one BodyGraph image.")
     parser.add_argument("image_path", type=Path)
     parser.add_argument(
         "--mock-response",

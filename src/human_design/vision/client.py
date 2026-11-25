@@ -18,9 +18,7 @@ class VisionClientError(RuntimeError):
     """Raised when BodyGraph raw extraction cannot be completed safely."""
 
 
-_SUPPORTED_IMAGE_TYPES = frozenset(
-    {"image/png", "image/jpeg", "image/webp", "image/gif"}
-)
+_SUPPORTED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _API_TIMEOUT_SECONDS = 300.0
@@ -42,9 +40,9 @@ def load_mock_response(path: Path) -> str:
 # entry point for local BodyGraph raw extraction, either from a mock fixture or real API call
 def extract_bodygraph_raw_json(
     *,
-    image_path: Path, # ex: data/bodygraph_samples/images/andy.png
-    config: VisionConfig, # model, reasoning_effort, real_api_enabled, openai_api_key
-    mock_response_path: Path | None = None, # local testing
+    image_path: Path,  # ex: data/bodygraph_samples/images/andy.png
+    config: VisionConfig,  # model, reasoning_effort, real_api_enabled, openai_api_key
+    mock_response_path: Path | None = None,  # local testing
 ) -> str:
     # validate the image file exists
     _require_image_file(image_path)
@@ -54,14 +52,9 @@ def extract_bodygraph_raw_json(
         return load_mock_response(mock_response_path)
 
     if not config.real_api_enabled:
-        raise VisionClientError(
-            "Provide a mock response or set HD_VISION_REAL_API=1 "
-            "for real API mode."
-        )
+        raise VisionClientError("Provide a mock response or set HD_VISION_REAL_API=1 for real API mode.")
     if not config.openai_api_key:
-        raise VisionClientError(
-            "OPENAI_API_KEY is required when HD_VISION_REAL_API=1."
-        )
+        raise VisionClientError("OPENAI_API_KEY is required when HD_VISION_REAL_API=1.")
 
     return extract_bodygraph_raw_json_with_real_api(
         image_path=image_path,
@@ -86,25 +79,19 @@ def extract_bodygraph_raw_json_with_real_api(
         from openai.types.shared_params import Reasoning
     except ImportError as exc:
         raise VisionClientError(
-            "The OpenAI SDK is unavailable. Install the project's existing "
-            "dependencies before using real API mode."
+            "The OpenAI SDK is unavailable. Install the project's existing dependencies before using real API mode."
         ) from exc
 
     prompt = load_bodygraph_raw_extraction_prompt()
 
-    media_type = (mimetypes.guess_type(image_path.name)[0])
+    media_type = mimetypes.guess_type(image_path.name)[0]
     if media_type not in _SUPPORTED_IMAGE_TYPES:
-        raise VisionClientError(
-            f"Unsupported image type for {image_path.name}: {media_type or 'unknown'}"
-        )
+        raise VisionClientError(f"Unsupported image type for {image_path.name}: {media_type or 'unknown'}")
 
     # VisionClientError (size limit) propagates out untouched
     try:
         if image_path.stat().st_size > _MAX_IMAGE_BYTES:
-            raise VisionClientError(
-                f"Image exceeds {_MAX_IMAGE_BYTES // (1024 * 1024)}MB limit: "
-                f"{image_path}"
-            )
+            raise VisionClientError(f"Image exceeds {_MAX_IMAGE_BYTES // (1024 * 1024)}MB limit: {image_path}")
 
         # read_bytes() -> bytes, b64encode -> base64 bytes, decode -> str
         encoded_image = base64.b64encode(image_path.read_bytes()).decode("ascii")
@@ -138,9 +125,7 @@ def extract_bodygraph_raw_json_with_real_api(
                         },
                         {
                             "type": "input_image",
-                            "image_url": (
-                                f"data:{media_type};base64,{encoded_image}"
-                            ),
+                            "image_url": (f"data:{media_type};base64,{encoded_image}"),
                         },
                     ],
                 }
@@ -153,7 +138,7 @@ def extract_bodygraph_raw_json_with_real_api(
                 "format": {
                     "type": "json_schema",
                     "name": "bodygraph_raw_extraction",
-                    "strict": True, # model's output must match the schema exactly
+                    "strict": True,  # model's output must match the schema exactly
                     "schema": _bodygraph_raw_extraction_schema(),
                 }
             },
@@ -167,13 +152,11 @@ def extract_bodygraph_raw_json_with_real_api(
             store=False,
         )
     except Exception as exc:
-        raise VisionClientError(
-            "Vision API request failed. Check your API configuration and try again."
-        ) from exc
+        raise VisionClientError("Vision API request failed. Check your API configuration and try again.") from exc
 
     # extract the output text from the response
     output_text = response.output_text
-    
+
     # check if the output text is valid and not empty
     if not isinstance(output_text, str) or not output_text.strip():
         raise VisionClientError("Vision API returned no raw JSON text.")
@@ -182,7 +165,7 @@ def extract_bodygraph_raw_json_with_real_api(
 
 
 def _require_image_file(image_path: Path) -> None:
-    if not image_path.is_file(): # file exist -> is_file() returns True
+    if not image_path.is_file():  # file exist -> is_file() returns True
         raise VisionClientError(f"Image file not found: {image_path}")
 
 

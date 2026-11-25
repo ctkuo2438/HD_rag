@@ -357,10 +357,6 @@ def test_build_text_extraction_report_does_not_create_storage_or_text_dumps(
 
     ingestion.build_text_extraction_report(pdf_dir)
 
-    written_files = sorted(
-        path.relative_to(tmp_path)
-        for path in tmp_path.rglob("*")
-        if path.is_file()
-    )
+    written_files = sorted(path.relative_to(tmp_path) for path in tmp_path.rglob("*") if path.is_file())
     assert written_files == [Path("data/pdfs/book.pdf")]
     assert not (tmp_path / "storage").exists()

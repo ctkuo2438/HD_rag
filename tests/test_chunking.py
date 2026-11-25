@@ -26,10 +26,7 @@ def test_chunk_documents_uses_default_sentence_splitter_settings(
             captured_settings["chunk_overlap"] = chunk_overlap
 
         def get_nodes_from_documents(self, documents: list[Document]) -> list[TextNode]:
-            return [
-                TextNode(text=document.text, metadata=dict(document.metadata))
-                for document in documents
-            ]
+            return [TextNode(text=document.text, metadata=dict(document.metadata)) for document in documents]
 
     monkeypatch.setattr(chunking, "SentenceSplitter", FakeSentenceSplitter)
 
@@ -155,9 +152,7 @@ def test_chunk_documents_uses_source_metadata_as_page_fallback(
 
     monkeypatch.setattr(chunking, "SentenceSplitter", FakeSentenceSplitter)
 
-    [node], _result = chunking.chunk_documents(
-        [Document(text="source text", metadata={"source": "12"})]
-    )
+    [node], _result = chunking.chunk_documents([Document(text="source text", metadata={"source": "12"})])
 
     assert node.metadata["page_label"] == "12"
     assert node.metadata["page_number"] == 12
@@ -175,9 +170,7 @@ def test_chunk_documents_ignores_non_int_like_source_for_page_number(
 
     monkeypatch.setattr(chunking, "SentenceSplitter", FakeSentenceSplitter)
 
-    [node], _result = chunking.chunk_documents(
-        [Document(text="source text", metadata={"source": "cover"})]
-    )
+    [node], _result = chunking.chunk_documents([Document(text="source text", metadata={"source": "cover"})])
 
     assert node.metadata["page_label"] == "cover"
     assert "page_number" not in node.metadata

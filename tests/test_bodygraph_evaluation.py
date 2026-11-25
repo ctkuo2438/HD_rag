@@ -84,13 +84,15 @@ RAW_METRIC_NAMES = {
     for prefix in ("visually_defined_center", "visually_active_gate", "visible_channel")
     for metric in ("precision", "recall", "f1")
 }
-DERIVED_METRIC_NAMES = {
-    f"{field}_exact_match" for field in BASIC_INFO_FIELDS
-} | {"overall_basic_info_accuracy"} | {
-    f"{prefix}_{metric}"
-    for prefix in ("derived_center", "active_gate", "active_channel")
-    for metric in ("precision", "recall", "f1")
-}
+DERIVED_METRIC_NAMES = (
+    {f"{field}_exact_match" for field in BASIC_INFO_FIELDS}
+    | {"overall_basic_info_accuracy"}
+    | {
+        f"{prefix}_{metric}"
+        for prefix in ("derived_center", "active_gate", "active_channel")
+        for metric in ("precision", "recall", "f1")
+    }
+)
 VALIDATION_METRIC_NAMES = {
     "validation_is_valid_exact_match",
     "warning_code_precision",
@@ -242,15 +244,9 @@ def _golden_case(
         "notes": "Synthetic evaluation case.",
         "evaluation_scope": evaluation_scope,
         "expected_raw_labels": _full_raw_labels(),
-        "expected_derived_labels": _derived_labels()
-        if include_derived_metrics
-        else None,
+        "expected_derived_labels": _derived_labels() if include_derived_metrics else None,
         "expected_validation_result": {
-            "is_valid": (
-                _warnings_are_valid(warning_entries)
-                if expected_is_valid is None
-                else expected_is_valid
-            ),
+            "is_valid": (_warnings_are_valid(warning_entries) if expected_is_valid is None else expected_is_valid),
             "warnings": warning_entries or [],
         },
     }
@@ -268,9 +264,7 @@ def _prediction(
     raw_labels = _full_raw_labels()
     validation_result: dict[str, object] = {"warnings": warnings or []}
     if include_is_valid:
-        validation_result["is_valid"] = (
-            _warnings_are_valid(warnings) if is_valid is None else is_valid
-        )
+        validation_result["is_valid"] = _warnings_are_valid(warnings) if is_valid is None else is_valid
 
     return {
         "raw_vision": {
@@ -280,9 +274,7 @@ def _prediction(
             "visually_defined_centers": raw_labels["visually_defined_centers"],
             "visible_colored_channels": raw_labels["visible_colored_channels"],
         },
-        "derived_chart_data": derived_chart_data
-        if derived_chart_data is not None
-        else _derived_labels(),
+        "derived_chart_data": derived_chart_data if derived_chart_data is not None else _derived_labels(),
         "validation_result": validation_result,
     }
 
@@ -340,7 +332,9 @@ def _write_predictions_file(
 @pytest.mark.parametrize("entrypoint", ["loader", "evaluator", "batch_evaluator"])
 @pytest.mark.parametrize("section", ["raw_vision", "derived_chart_data", "validation_result"])
 def test_prediction_validation_is_enforced_at_every_entrypoint(
-    tmp_path, entrypoint, section,
+    tmp_path,
+    entrypoint,
+    section,
 ) -> None:
     prediction = _prediction()
     prediction[section] = None
@@ -352,12 +346,15 @@ def test_prediction_validation_is_enforced_at_every_entrypoint(
             _script_module()._load_predictions(path)
         elif entrypoint == "evaluator":
             _metric_module().evaluate_bodygraph_prediction(
-                case_id="case_001", golden=golden, prediction=prediction,
+                case_id="case_001",
+                golden=golden,
+                prediction=prediction,
             )
         else:
             # Even unmatched predictions must be validated, with metric families off.
             _metric_module().evaluate_bodygraph_predictions(
-                golden_cases=[golden], predictions={"unmatched": prediction},
+                golden_cases=[golden],
+                predictions={"unmatched": prediction},
             )
 
 
@@ -377,7 +374,9 @@ def test_scope_validation_is_enforced_at_every_entrypoint(tmp_path, entrypoint, 
             _script_module()._load_golden_cases(_write_golden_file(tmp_path, [golden]))
         else:
             _metric_module().evaluate_bodygraph_prediction(
-                case_id="case_001", golden=golden, prediction=_prediction(),
+                case_id="case_001",
+                golden=golden,
+                prediction=_prediction(),
             )
 
 
@@ -416,11 +415,7 @@ def test_golden_labels_reference_synthetic_fixture_without_loading_image() -> No
 
 
 def test_full_derived_evaluation_cases_have_all_planetary_and_derived_labels() -> None:
-    full_cases = [
-        case
-        for case in _cases()
-        if case["evaluation_scope"]["include_derived_metrics"] is True
-    ]
+    full_cases = [case for case in _cases() if case["evaluation_scope"]["include_derived_metrics"] is True]
     assert full_cases
 
     for case in full_cases:
@@ -429,9 +424,7 @@ def test_full_derived_evaluation_cases_have_all_planetary_and_derived_labels() -
         assert set(raw_labels["personality"]) == set(PLANETARY_FIELDS)
         assert set(raw_labels["design"]) == set(PLANETARY_FIELDS)
 
-        activations = tuple(raw_labels["personality"].values()) + tuple(
-            raw_labels["design"].values()
-        )
+        activations = tuple(raw_labels["personality"].values()) + tuple(raw_labels["design"].values())
         assert all(value is not None for value in activations)
         assert all(value not in DISALLOWED_MISSING_ACTIVATION_SENTINELS for value in activations)
 
@@ -442,11 +435,7 @@ def test_full_derived_evaluation_cases_have_all_planetary_and_derived_labels() -
 
 
 def test_full_derived_golden_labels_are_consistent_with_interpreter() -> None:
-    full_cases = [
-        case
-        for case in _cases()
-        if case["evaluation_scope"]["include_derived_metrics"] is True
-    ]
+    full_cases = [case for case in _cases() if case["evaluation_scope"]["include_derived_metrics"] is True]
     assert full_cases
 
     for case in full_cases:
@@ -465,11 +454,7 @@ def test_full_derived_golden_labels_are_consistent_with_interpreter() -> None:
 
 
 def test_partial_raw_only_cases_exclude_derived_metrics_and_keep_all_planet_keys() -> None:
-    partial_cases = [
-        case
-        for case in _cases()
-        if case["evaluation_scope"]["include_derived_metrics"] is False
-    ]
+    partial_cases = [case for case in _cases() if case["evaluation_scope"]["include_derived_metrics"] is False]
     assert partial_cases
 
     for case in partial_cases:
@@ -481,9 +466,7 @@ def test_partial_raw_only_cases_exclude_derived_metrics_and_keep_all_planet_keys
         assert set(raw_labels["personality"]) == set(PLANETARY_FIELDS)
         assert set(raw_labels["design"]) == set(PLANETARY_FIELDS)
 
-        activations = tuple(raw_labels["personality"].values()) + tuple(
-            raw_labels["design"].values()
-        )
+        activations = tuple(raw_labels["personality"].values()) + tuple(raw_labels["design"].values())
         assert any(value is None for value in activations)
         assert all(value not in DISALLOWED_MISSING_ACTIVATION_SENTINELS for value in activations)
 
@@ -525,13 +508,20 @@ def test_gitignore_protects_private_bodygraph_artifacts() -> None:
     ["vision_response.json", "bodygraph_prediction.json", "base64", "image_payload.json"],
 )
 def test_gitignore_protects_generated_artifact_suffixes(
-    directory: str, suffix: str,
+    directory: str,
+    suffix: str,
 ) -> None:
     artifact_path = f"{directory}sample.{suffix}"
     result = subprocess.run(
         [
-            "git", "-c", "core.excludesFile=/dev/null", "check-ignore",
-            "--no-index", "--verbose", "--", artifact_path,
+            "git",
+            "-c",
+            "core.excludesFile=/dev/null",
+            "check-ignore",
+            "--no-index",
+            "--verbose",
+            "--",
+            artifact_path,
         ],
         cwd=REPO_ROOT,
         capture_output=True,
@@ -547,7 +537,12 @@ def test_gitignore_protects_generated_artifact_suffixes(
 def test_gitignore_preserves_sanitized_fixtures() -> None:
     result = subprocess.run(
         [
-            "git", "-c", "core.excludesFile=/dev/null", "check-ignore", "--no-index", "--",
+            "git",
+            "-c",
+            "core.excludesFile=/dev/null",
+            "check-ignore",
+            "--no-index",
+            "--",
             "tests/fixtures/bodygraph/test1.png",
             "tests/fixtures/bodygraph/test1_raw_response.json",
             "data/bodygraph_samples/golden_labels.example.json",
@@ -670,7 +665,9 @@ def test_enabled_raw_scope_requires_visual_collections(field_name: str) -> None:
 
     with pytest.raises(ValueError, match="expected_raw_labels"):
         _metric_module().evaluate_bodygraph_prediction(
-            case_id="case_001", golden=golden, prediction=_prediction(),
+            case_id="case_001",
+            golden=golden,
+            prediction=_prediction(),
         )
 
 
@@ -678,7 +675,10 @@ def test_enabled_raw_scope_requires_visual_collections(field_name: str) -> None:
 @pytest.mark.parametrize("include_derived", [False, True])
 @pytest.mark.parametrize("missing_prediction", [False, True])
 def test_scope_gates_metric_families(
-    tmp_path, include_raw, include_derived, missing_prediction,
+    tmp_path,
+    include_raw,
+    include_derived,
+    missing_prediction,
 ) -> None:
     golden = _golden_case(
         include_raw_visual_metrics=include_raw,
@@ -697,9 +697,7 @@ def test_scope_gates_metric_families(
         expected_names.update(DERIVED_METRIC_NAMES)
 
     assert set(result.metrics) == expected_names
-    assert ("Prediction is missing derived_chart_data." in result.warnings) is (
-        include_derived and missing_prediction
-    )
+    assert ("Prediction is missing derived_chart_data." in result.warnings) is (include_derived and missing_prediction)
     if not missing_prediction:
         assert all(value == 1.0 for value in result.metrics.values())
 
@@ -707,18 +705,19 @@ def test_scope_gates_metric_families(
 @pytest.mark.parametrize("include_raw", [False, True])
 def test_raw_scope_also_gates_null_respect(include_raw: bool) -> None:
     golden = _golden_case(
-        include_raw_visual_metrics=include_raw, include_derived_metrics=False,
+        include_raw_visual_metrics=include_raw,
+        include_derived_metrics=False,
     )
     golden["expected_raw_labels"]["personality"]["moon"] = None
     result = _metric_module().evaluate_bodygraph_prediction(
-        case_id="case_001", golden=golden, prediction=_prediction(),
+        case_id="case_001",
+        golden=golden,
+        prediction=_prediction(),
     )
 
     if include_raw:
         assert result.metrics["activation_null_respect_rate"] == 0.0
-        assert set(result.metrics) == (
-            RAW_METRIC_NAMES | VALIDATION_METRIC_NAMES | {"activation_null_respect_rate"}
-        )
+        assert set(result.metrics) == (RAW_METRIC_NAMES | VALIDATION_METRIC_NAMES | {"activation_null_respect_rate"})
     else:
         assert set(result.metrics) == VALIDATION_METRIC_NAMES
 
@@ -728,7 +727,9 @@ def test_scope_excludes_disabled_cases_from_aggregate_metrics() -> None:
     derived_only = _golden_case("derived", include_raw_visual_metrics=False)
     combined = _golden_case("combined")
     validation_only = _golden_case(
-        "validation", include_raw_visual_metrics=False, include_derived_metrics=False,
+        "validation",
+        include_raw_visual_metrics=False,
+        include_derived_metrics=False,
     )
     derived_prediction = _prediction()
     derived_prediction["raw_vision"] = {}
@@ -746,9 +747,7 @@ def test_scope_excludes_disabled_cases_from_aggregate_metrics() -> None:
         thresholds={"activation_exact_match_rate": 1.0, "overall_basic_info_accuracy": 1.0},
     )
 
-    assert set(summary.aggregate_metrics) == (
-        RAW_METRIC_NAMES | DERIVED_METRIC_NAMES | VALIDATION_METRIC_NAMES
-    )
+    assert set(summary.aggregate_metrics) == (RAW_METRIC_NAMES | DERIVED_METRIC_NAMES | VALIDATION_METRIC_NAMES)
     assert all(value == 1.0 for value in summary.aggregate_metrics.values())
     assert summary.passed_thresholds is True
 
@@ -760,7 +759,9 @@ def test_mixed_scope_aggregation_does_not_inflate_nonperfect_scores() -> None:
             _golden_case("raw", include_derived_metrics=False),
             _golden_case("derived", include_raw_visual_metrics=False),
             _golden_case(
-                "validation", include_raw_visual_metrics=False, include_derived_metrics=False,
+                "validation",
+                include_raw_visual_metrics=False,
+                include_derived_metrics=False,
             ),
         ],
         predictions={
@@ -845,7 +846,9 @@ def test_malformed_raw_visual_collections_raise_input_errors(
 
     with pytest.raises(ValueError, match=field_name):
         evaluation.evaluate_bodygraph_prediction(
-            case_id="case_001", golden=_golden_case(), prediction=prediction,
+            case_id="case_001",
+            golden=_golden_case(),
+            prediction=prediction,
         )
 
 
@@ -861,7 +864,9 @@ def test_malformed_derived_channel_collection_raises_input_error(
 
     with pytest.raises(ValueError, match="active_channels"):
         evaluation.evaluate_bodygraph_prediction(
-            case_id="case_001", golden=_golden_case(), prediction=prediction,
+            case_id="case_001",
+            golden=_golden_case(),
+            prediction=prediction,
         )
 
 
@@ -1084,7 +1089,9 @@ def test_missing_activation_never_matches_expected_null(column, missing_level) -
         del prediction["raw_vision"]
 
     result = _metric_module().evaluate_bodygraph_prediction(
-        case_id="case_001", golden=golden, prediction=prediction,
+        case_id="case_001",
+        golden=golden,
+        prediction=prediction,
     )
 
     assert result.metrics["activation_null_respect_rate"] == 0.0
@@ -1094,7 +1101,12 @@ def test_missing_activation_never_matches_expected_null(column, missing_level) -
 @pytest.mark.parametrize("state", ["missing", "empty", "matching"])
 @pytest.mark.parametrize("expected_empty", [False, True])
 def test_prediction_collection_presence_controls_credit(
-    section, labels, field, prefix, state, expected_empty,
+    section,
+    labels,
+    field,
+    prefix,
+    state,
+    expected_empty,
 ) -> None:
     golden = _golden_case(warning_entries=["MISSING_ACTIVATION"])
     if expected_empty:
@@ -1106,7 +1118,9 @@ def test_prediction_collection_presence_controls_credit(
         prediction[section][field] = [] if state == "empty" else golden[labels][field]
 
     result = _metric_module().evaluate_bodygraph_prediction(
-        case_id="case_001", golden=golden, prediction=prediction,
+        case_id="case_001",
+        golden=golden,
+        prediction=prediction,
     )
 
     expected_score = float(state == "matching" or (state == "empty" and expected_empty))
@@ -1117,7 +1131,11 @@ def test_prediction_collection_presence_controls_credit(
 @pytest.mark.parametrize("section,labels,field,prefix", PREDICTION_COLLECTIONS)
 @pytest.mark.parametrize("value", [None, "", {}, 1, False])
 def test_malformed_prediction_collection_containers_are_rejected(
-    section, labels, field, prefix, value,
+    section,
+    labels,
+    field,
+    prefix,
+    value,
 ) -> None:
     prediction = _prediction()
     prediction[section][field] = value
@@ -1130,10 +1148,26 @@ def test_malformed_prediction_collection_containers_are_rejected(
 @pytest.mark.parametrize(
     "value",
     [
-        "", "bad", "61.x", "0.1", "65.1", "1.0", "1.7", 61.4, True, False, [], {},
-        {"gate": 61}, {"line": 4}, {"gate": True, "line": 4},
-        {"gate": 61, "line": False}, {"gate": 61.0, "line": 4},
-        {"gate": "61", "line": 4}, {"gate": 0, "line": 1}, {"gate": 64, "line": 7},
+        "",
+        "bad",
+        "61.x",
+        "0.1",
+        "65.1",
+        "1.0",
+        "1.7",
+        61.4,
+        True,
+        False,
+        [],
+        {},
+        {"gate": 61},
+        {"line": 4},
+        {"gate": True, "line": 4},
+        {"gate": 61, "line": False},
+        {"gate": 61.0, "line": 4},
+        {"gate": "61", "line": 4},
+        {"gate": 0, "line": 1},
+        {"gate": 64, "line": 7},
     ],
 )
 def test_malformed_prediction_activations_are_rejected(column, value) -> None:
@@ -1153,7 +1187,8 @@ def test_malformed_prediction_activations_are_rejected(column, value) -> None:
             ("derived_chart_data", "active_gates"),
         )
         for value in (True, False, 1.0, 0, 65, "65", "one", None, {}, [])
-    ] + [
+    ]
+    + [
         (f"{section}.{field}", value)
         for section, field in (
             ("raw_vision", "visually_defined_centers"),
@@ -1176,8 +1211,12 @@ def test_malformed_prediction_set_elements_are_rejected(path, value) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "raw_vision", "raw_vision.personality", "raw_vision.design",
-        "derived_chart_data", "derived_chart_data.basic_info", "validation_result",
+        "raw_vision",
+        "raw_vision.personality",
+        "raw_vision.design",
+        "derived_chart_data",
+        "derived_chart_data.basic_info",
+        "validation_result",
     ],
 )
 @pytest.mark.parametrize("value", [None, 0, 1, True, False, "false", []])
@@ -1215,7 +1254,11 @@ def test_predicted_validity_requires_a_real_boolean(value) -> None:
 @pytest.mark.parametrize(
     "entry",
     [
-        {}, {"case_id": None}, {"case_id": False}, {"case_id": 1}, {"case_id": ""},
+        {},
+        {"case_id": None},
+        {"case_id": False},
+        {"case_id": 1},
+        {"case_id": ""},
         {"case_id": "case_001", "derived": {}},
         {"case_id": "case_001", "validation": {}},
         {"case_id": "case_001", "extra": {}},
@@ -1241,11 +1284,14 @@ def test_malformed_entire_prediction_is_not_missing(value) -> None:
     evaluation = _metric_module()
     with pytest.raises(ValueError, match="prediction"):
         evaluation.evaluate_bodygraph_prediction(
-            case_id="case_001", golden=_golden_case(), prediction=value,
+            case_id="case_001",
+            golden=_golden_case(),
+            prediction=value,
         )
     with pytest.raises(ValueError, match="prediction"):
         evaluation.evaluate_bodygraph_predictions(
-            golden_cases=[_golden_case()], predictions={"case_001": value},
+            golden_cases=[_golden_case()],
+            predictions={"case_001": value},
         )
 
 
@@ -1253,7 +1299,8 @@ def test_malformed_entire_prediction_is_not_missing(value) -> None:
 def test_batch_predictions_require_a_mapping(predictions) -> None:
     with pytest.raises(ValueError, match="predictions"):
         _metric_module().evaluate_bodygraph_predictions(
-            golden_cases=[_golden_case()], predictions=predictions,
+            golden_cases=[_golden_case()],
+            predictions=predictions,
         )
 
 
@@ -1270,10 +1317,14 @@ def test_batch_rejects_malformed_entries_without_matching_golden_cases(value) ->
 @pytest.mark.parametrize("include_derived", [False, True])
 @pytest.mark.parametrize("present", [False, True])
 def test_missing_prediction_scores_all_applicable_metrics_as_failures(
-    tmp_path, include_raw, include_derived, present,
+    tmp_path,
+    include_raw,
+    include_derived,
+    present,
 ) -> None:
     golden = _golden_case(
-        include_raw_visual_metrics=include_raw, include_derived_metrics=include_derived,
+        include_raw_visual_metrics=include_raw,
+        include_derived_metrics=include_derived,
     )
     for _, labels, field, _ in PREDICTION_COLLECTIONS:
         if golden[labels] is not None:
@@ -1284,7 +1335,8 @@ def test_missing_prediction_scores_all_applicable_metrics_as_failures(
     predictions = _script_module()._load_predictions(path)
 
     summary = _metric_module().evaluate_bodygraph_predictions(
-        golden_cases=[golden], predictions=predictions,
+        golden_cases=[golden],
+        predictions=predictions,
     )
 
     expected_names = VALIDATION_METRIC_NAMES.copy()
@@ -1317,7 +1369,9 @@ def test_missing_basic_info_field_stays_in_accuracy_denominator(field) -> None:
     del prediction["derived_chart_data"]["basic_info"][field]
 
     result = _metric_module().evaluate_bodygraph_prediction(
-        case_id="case_001", golden=_golden_case(), prediction=prediction,
+        case_id="case_001",
+        golden=_golden_case(),
+        prediction=prediction,
     )
 
     assert result.metrics[f"{field}_exact_match"] == 0.0
@@ -1328,7 +1382,8 @@ def test_missing_outputs_stay_in_mixed_scope_aggregation_denominators() -> None:
     cases = []
     for case_id in ("perfect", "missing", "disabled"):
         golden = _golden_case(
-            case_id, include_raw_visual_metrics=case_id != "disabled",
+            case_id,
+            include_raw_visual_metrics=case_id != "disabled",
             include_derived_metrics=case_id != "disabled",
         )
         golden["expected_raw_labels"]["visually_active_gates"] = []
@@ -1340,7 +1395,8 @@ def test_missing_outputs_stay_in_mixed_scope_aggregation_denominators() -> None:
     prediction["derived_chart_data"]["active_channels"] = []
 
     summary = _metric_module().evaluate_bodygraph_predictions(
-        golden_cases=cases, predictions={"perfect": prediction, "disabled": _prediction()},
+        golden_cases=cases,
+        predictions={"perfect": prediction, "disabled": _prediction()},
         thresholds={"visually_active_gate_f1": 0.75, "active_channel_f1": 0.75},
     )
 
@@ -1360,7 +1416,8 @@ def test_missing_null_activations_stay_in_aggregation_denominator() -> None:
     prediction["raw_vision"]["personality"]["moon"] = None
 
     summary = _metric_module().evaluate_bodygraph_predictions(
-        golden_cases=cases, predictions={"good": prediction},
+        golden_cases=cases,
+        predictions={"good": prediction},
     )
 
     assert summary.aggregate_metrics["activation_null_respect_rate"] == 0.5
@@ -1387,7 +1444,9 @@ def test_valid_prediction_representations_keep_existing_scores(collection_type) 
     }
 
     result = _metric_module().evaluate_bodygraph_prediction(
-        case_id="case_001", golden=golden, prediction=prediction,
+        case_id="case_001",
+        golden=golden,
+        prediction=prediction,
     )
 
     assert set(result.metrics.values()) == {1.0}
@@ -1395,7 +1454,10 @@ def test_valid_prediction_representations_keep_existing_scores(collection_type) 
 
 @pytest.mark.parametrize("state,expected_status", [("missing", 1), ("malformed", 2)])
 def test_cli_distinguishes_missing_output_from_malformed_input(
-    tmp_path, capsys, state, expected_status,
+    tmp_path,
+    capsys,
+    state,
+    expected_status,
 ) -> None:
     golden_path = _write_golden_file(tmp_path, [_golden_case()])
     prediction = {"case_id": "case_001"}
@@ -1403,10 +1465,17 @@ def test_cli_distinguishes_missing_output_from_malformed_input(
         prediction["validation_result"] = {"warnings": "synthetic private payload"}
     predictions_path = _write_predictions_file(tmp_path, [prediction])
 
-    status = _script_module().main([
-        "--golden", str(golden_path), "--predictions", str(predictions_path),
-        "--threshold", "warning_code_f1=1.0", "--json",
-    ])
+    status = _script_module().main(
+        [
+            "--golden",
+            str(golden_path),
+            "--predictions",
+            str(predictions_path),
+            "--threshold",
+            "warning_code_f1=1.0",
+            "--json",
+        ]
+    )
 
     output = capsys.readouterr()
     assert status == expected_status
@@ -1471,7 +1540,8 @@ def test_bare_string_warning_labels_match_full_warning_objects(
             warning_entries=[code.value],
         ),
         prediction=_prediction(
-            is_valid=not affects_validity, warnings=[predicted_warning],
+            is_valid=not affects_validity,
+            warnings=[predicted_warning],
         ),
     )
 
@@ -1502,22 +1572,32 @@ def test_evaluation_rejects_noncanonical_warning_metadata(side, metadata) -> Non
 @pytest.mark.parametrize("side", ["golden", "prediction"])
 @pytest.mark.parametrize("metadata", NONCANONICAL_WARNING_METADATA)
 def test_evaluation_loaders_reject_noncanonical_warning_metadata(
-    tmp_path, capsys, side, metadata,
+    tmp_path,
+    capsys,
+    side,
+    metadata,
 ) -> None:
     script = _script_module()
     canonical = _warning_payload()
     conflicting = {**canonical, **metadata}
     golden_path = _write_golden_file(
         tmp_path,
-        [_golden_case(
-            warning_entries=[conflicting if side == "golden" else canonical],
-        )],
+        [
+            _golden_case(
+                warning_entries=[conflicting if side == "golden" else canonical],
+            )
+        ],
     )
     predictions_path = _write_predictions_file(
         tmp_path,
-        [{"case_id": "case_001", **_prediction(
-            warnings=[conflicting if side == "prediction" else canonical],
-        )}],
+        [
+            {
+                "case_id": "case_001",
+                **_prediction(
+                    warnings=[conflicting if side == "prediction" else canonical],
+                ),
+            }
+        ],
     )
 
     with pytest.raises(ValueError, match="canonical"):
@@ -1526,9 +1606,17 @@ def test_evaluation_loaders_reject_noncanonical_warning_metadata(
         else:
             script._load_predictions(predictions_path)
 
-    assert script.main([
-        "--golden", str(golden_path), "--predictions", str(predictions_path),
-    ]) == 2
+    assert (
+        script.main(
+            [
+                "--golden",
+                str(golden_path),
+                "--predictions",
+                str(predictions_path),
+            ]
+        )
+        == 2
+    )
     output = capsys.readouterr()
     assert output.out == ""
     assert "canonical" in output.err
@@ -1551,7 +1639,12 @@ def test_unknown_warning_code_errors_do_not_expose_input(marker, as_object) -> N
 @pytest.mark.parametrize("side", ["golden", "prediction", "unmatched_prediction"])
 @pytest.mark.parametrize("json_mode", [False, True])
 def test_unknown_warning_codes_are_redacted_in_cli_errors(
-    tmp_path, capsys, marker, as_object, side, json_mode,
+    tmp_path,
+    capsys,
+    marker,
+    as_object,
+    side,
+    json_mode,
 ) -> None:
     warning = {**_warning_payload(), "code": marker} if as_object else marker
     golden = _golden_case()
@@ -1561,16 +1654,24 @@ def test_unknown_warning_codes_are_redacted_in_cli_errors(
     elif side == "prediction":
         predictions[0]["validation_result"]["warnings"] = [warning]
     else:
-        predictions.append({
-            "case_id": "unmatched", "validation_result": {"warnings": [warning]},
-        })
+        predictions.append(
+            {
+                "case_id": "unmatched",
+                "validation_result": {"warnings": [warning]},
+            }
+        )
     golden_path = _write_golden_file(tmp_path, [golden])
     predictions_path = _write_predictions_file(tmp_path, predictions)
 
-    status = _script_module().main([
-        "--golden", str(golden_path), "--predictions", str(predictions_path),
-        *(["--json"] if json_mode else []),
-    ])
+    status = _script_module().main(
+        [
+            "--golden",
+            str(golden_path),
+            "--predictions",
+            str(predictions_path),
+            *(["--json"] if json_mode else []),
+        ]
+    )
 
     output = capsys.readouterr()
     assert status == 2
@@ -1585,7 +1686,9 @@ def test_unexpected_field_names_are_redacted_in_shared_schema_errors(marker) -> 
 
     with pytest.raises(ValueError) as exc_info:
         _script_module()._require_exact_keys(
-            value, {"schema_version", "predictions"}, "predictions",
+            value,
+            {"schema_version", "predictions"},
+            "predictions",
         )
 
     assert marker not in str(exc_info.value)
@@ -1597,7 +1700,11 @@ def test_unexpected_field_names_are_redacted_in_shared_schema_errors(marker) -> 
 @pytest.mark.parametrize("location", ["warning", "prediction_envelope"])
 @pytest.mark.parametrize("json_mode", [False, True])
 def test_unexpected_field_names_are_redacted_in_cli_errors(
-    tmp_path, capsys, marker, location, json_mode,
+    tmp_path,
+    capsys,
+    marker,
+    location,
+    json_mode,
 ) -> None:
     warning = _warning_payload()
     if location == "warning":
@@ -1609,16 +1716,18 @@ def test_unexpected_field_names_are_redacted_in_cli_errors(
         payload[marker] = "synthetic private payload"
         predictions_path.write_text(json.dumps(payload))
 
-    status = _script_module().main([
-        "--golden", str(golden_path), "--predictions", str(predictions_path),
-        *(["--json"] if json_mode else []),
-    ])
+    status = _script_module().main(
+        [
+            "--golden",
+            str(golden_path),
+            "--predictions",
+            str(predictions_path),
+            *(["--json"] if json_mode else []),
+        ]
+    )
 
     output = capsys.readouterr()
-    label = (
-        "golden labels cases[0].expected_validation_result.warnings[0]"
-        if location == "warning" else "predictions"
-    )
+    label = "golden labels cases[0].expected_validation_result.warnings[0]" if location == "warning" else "predictions"
     assert status == 2
     assert output.out == ""
     assert marker not in output.err
@@ -1640,7 +1749,9 @@ def test_unexpected_field_names_are_redacted_in_cli_errors(
     ],
 )
 def test_golden_warning_validation_is_independent_of_prediction_presence(
-    include_metrics, prediction_state, warning,
+    include_metrics,
+    prediction_state,
+    warning,
 ) -> None:
     evaluation = _metric_module()
     golden = _golden_case(
@@ -1660,11 +1771,14 @@ def test_golden_warning_validation_is_independent_of_prediction_presence(
 
     with pytest.raises(ValueError, match="unknown warning code|canonical"):
         evaluation.evaluate_bodygraph_prediction(
-            case_id="case_001", golden=golden, prediction={} if missing_case else prediction,
+            case_id="case_001",
+            golden=golden,
+            prediction={} if missing_case else prediction,
         )
     with pytest.raises(ValueError, match="unknown warning code|canonical"):
         evaluation.evaluate_bodygraph_predictions(
-            golden_cases=[golden], predictions={} if missing_case else {"case_001": prediction},
+            golden_cases=[golden],
+            predictions={} if missing_case else {"case_001": prediction},
         )
 
 
@@ -1684,21 +1798,24 @@ def test_golden_warning_validation_is_independent_of_prediction_presence(
     ],
 )
 def test_golden_warning_validation_preserves_missing_and_empty_scoring(
-    expected_warnings, prediction, expected_scores,
+    expected_warnings,
+    prediction,
+    expected_scores,
 ) -> None:
     result = _metric_module().evaluate_bodygraph_prediction(
         case_id="case_001",
         golden=_golden_case(
-            include_raw_visual_metrics=False, include_derived_metrics=False,
+            include_raw_visual_metrics=False,
+            include_derived_metrics=False,
             warning_entries=expected_warnings,
         ),
         prediction=prediction,
     )
 
     assert set(result.metrics) == VALIDATION_METRIC_NAMES
-    assert tuple(
-        result.metrics[f"warning_code_{metric}"] for metric in ("precision", "recall", "f1")
-    ) == expected_scores
+    assert (
+        tuple(result.metrics[f"warning_code_{metric}"] for metric in ("precision", "recall", "f1")) == expected_scores
+    )
 
 
 def test_non_list_prediction_warnings_raise_input_error() -> None:
@@ -1871,7 +1988,8 @@ def test_prediction_loader_rejects_duplicate_case_ids(tmp_path) -> None:
 
 @pytest.mark.parametrize("flag", ["include_raw_visual_metrics", "include_derived_metrics"])
 @pytest.mark.parametrize(
-    "value", [0, 1, -1, 0.0, 1.0, "true", "false", "", None, [], {}, ["truthy"]],
+    "value",
+    [0, 1, -1, 0.0, 1.0, "true", "false", "", None, [], {}, ["truthy"]],
 )
 def test_scope_flags_require_strict_booleans(flag, value) -> None:
     golden_case = _golden_case()
@@ -1884,7 +2002,10 @@ def test_scope_flags_require_strict_booleans(flag, value) -> None:
 @pytest.mark.parametrize(
     "scope",
     [
-        "missing", None, [], {},
+        "missing",
+        None,
+        [],
+        {},
         {"include_raw_visual_metrics": True},
         {"include_derived_metrics": True},
         {"include_raw_visual_metrics": True, "include_derived_metrics": True, "extra": False},
@@ -1905,7 +2026,9 @@ def test_scope_must_be_explicit_and_complete(scope) -> None:
 @pytest.mark.parametrize("column", ["personality", "design"])
 @pytest.mark.parametrize("field", PLANETARY_FIELDS)
 def test_derived_scope_requires_every_source_activation(
-    include_raw, column, field,
+    include_raw,
+    column,
+    field,
 ) -> None:
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     golden["expected_raw_labels"][column][field] = None
@@ -1918,16 +2041,32 @@ def test_derived_scope_requires_every_source_activation(
 @pytest.mark.parametrize(
     "activation",
     [
-        "", "   ", False, True, 0, 61.4, "unknown", "61.x",
-        "0.1", "65.1", "1.0", "1.7", {},
-        {"gate": 61}, {"line": 4},
-        {"gate": True, "line": 4}, {"gate": 61, "line": False},
-        {"gate": 61.0, "line": 4}, {"gate": "61", "line": 4},
-        {"gate": 0, "line": 1}, {"gate": 1, "line": 7},
+        "",
+        "   ",
+        False,
+        True,
+        0,
+        61.4,
+        "unknown",
+        "61.x",
+        "0.1",
+        "65.1",
+        "1.0",
+        "1.7",
+        {},
+        {"gate": 61},
+        {"line": 4},
+        {"gate": True, "line": 4},
+        {"gate": 61, "line": False},
+        {"gate": 61.0, "line": 4},
+        {"gate": "61", "line": 4},
+        {"gate": 0, "line": 1},
+        {"gate": 1, "line": 7},
     ],
 )
 def test_derived_scope_rejects_invalid_source_activations(
-    include_raw, activation,
+    include_raw,
+    activation,
 ) -> None:
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     golden["expected_raw_labels"]["design"]["pluto"] = activation
@@ -1938,10 +2077,12 @@ def test_derived_scope_rejects_invalid_source_activations(
 
 @pytest.mark.parametrize("include_raw", [False, True])
 @pytest.mark.parametrize(
-    "activation", ["1.1", "64.6", " 61.4 ", {"gate": 1, "line": 1}, {"gate": 64, "line": 6}],
+    "activation",
+    ["1.1", "64.6", " 61.4 ", {"gate": 1, "line": 1}, {"gate": 64, "line": 6}],
 )
 def test_derived_scope_accepts_valid_source_activation_representations(
-    include_raw, activation,
+    include_raw,
+    activation,
 ) -> None:
     golden = _golden_case(include_raw_visual_metrics=include_raw)
     for column in ("personality", "design"):
@@ -1987,7 +2128,8 @@ def test_disabled_derived_scope_requires_explicit_null_labels() -> None:
 @pytest.mark.parametrize("include_raw", [False, True])
 def test_scope_accepts_all_null_sources_without_derived_metrics(include_raw) -> None:
     golden = _golden_case(
-        include_raw_visual_metrics=include_raw, include_derived_metrics=False,
+        include_raw_visual_metrics=include_raw,
+        include_derived_metrics=False,
     )
     for column in ("personality", "design"):
         golden["expected_raw_labels"][column] = dict.fromkeys(PLANETARY_FIELDS)
@@ -2005,12 +2147,19 @@ def test_invalid_scope_or_eligibility_is_a_cli_input_error(tmp_path, capsys, inv
         golden["evaluation_scope"][flag] = 1
     golden_path = _write_golden_file(tmp_path, [golden])
     predictions_path = _write_predictions_file(
-        tmp_path, [{"case_id": "case_001", **_prediction()}],
+        tmp_path,
+        [{"case_id": "case_001", **_prediction()}],
     )
 
-    status = _script_module().main([
-        "--golden", str(golden_path), "--predictions", str(predictions_path), "--json",
-    ])
+    status = _script_module().main(
+        [
+            "--golden",
+            str(golden_path),
+            "--predictions",
+            str(predictions_path),
+            "--json",
+        ]
+    )
 
     assert status == 2
     output = capsys.readouterr()
@@ -2036,8 +2185,7 @@ def test_scope_and_derived_labels_must_agree(
 
     with pytest.raises(
         ValueError,
-        match="include_derived_metrics.*expected_derived_labels|"
-        "expected_derived_labels.*include_derived_metrics",
+        match="include_derived_metrics.*expected_derived_labels|expected_derived_labels.*include_derived_metrics",
     ):
         validate_evaluation_scope(golden_case)
 

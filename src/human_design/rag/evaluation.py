@@ -66,7 +66,8 @@ class ModeEvaluation:
 def threshold_failures(aggregate: RetrievalMetrics) -> tuple[str, ...]:
     """Return below-minimum aggregate metric names in stable order, skipping None."""
     return tuple(
-        name for name, minimum in REGRESSION_THRESHOLDS.items()
+        name
+        for name, minimum in REGRESSION_THRESHOLDS.items()
         if (value := getattr(aggregate, name)) is not None and value < minimum
     )
 
@@ -99,10 +100,16 @@ def score_query(case: EvaluationCase, ranked: Sequence[RetrievedChunk]) -> Retri
     return RetrievalMetrics(
         hit_at_5=float(any(relevant[:5])),
         mrr_at_20=next((1 / rank for rank, hit in enumerate(relevant, 1) if hit), 0.0),
-        exact_entity_hit_rate=(sum(any(_entity_hit(entity, c.text) for c in candidates) for entity in entities)
-                               / len(entities)) if entities else None,
-        expected_source_page_hit_rate=(sum(any(_source_hit(dict(target), c) for c in candidates) for target in sources)
-                                      / len(sources)) if sources else None,
+        exact_entity_hit_rate=(
+            sum(any(_entity_hit(entity, c.text) for c in candidates) for entity in entities) / len(entities)
+        )
+        if entities
+        else None,
+        expected_source_page_hit_rate=(
+            sum(any(_source_hit(dict(target), c) for c in candidates) for target in sources) / len(sources)
+        )
+        if sources
+        else None,
     )
 
 
@@ -115,7 +122,10 @@ def _aggregate(rows: Sequence[QueryEvaluation]) -> RetrievalMetrics:
 
 
 def evaluate_modes(
-    cases: Sequence[EvaluationCase], dense: Retriever, sparse: Retriever, config: AppConfig,
+    cases: Sequence[EvaluationCase],
+    dense: Retriever,
+    sparse: Retriever,
+    config: AppConfig,
 ) -> dict[str, ModeEvaluation]:
     """Evaluate each mode independently with purpose-specific queries; never open indexes."""
     if not cases:
@@ -153,8 +163,11 @@ def _parse_case(item: object) -> EvaluationCase:
     if not isinstance(sources, list):
         raise ValueError("expected_sources must be a list")
     for source in sources:
-        if (not isinstance(source, dict) or not {"source_file", "source_relpath"} & source.keys()
-                or source.keys() - {"source_file", "source_relpath", "page_label", "page_number"}):
+        if (
+            not isinstance(source, dict)
+            or not {"source_file", "source_relpath"} & source.keys()
+            or source.keys() - {"source_file", "source_relpath", "page_label", "page_number"}
+        ):
             raise ValueError("expected_sources requires safe source and optional page fields")
         for key, value in source.items():
             if key == "page_number":
@@ -176,14 +189,21 @@ def load_evaluation_cases(path: Path) -> tuple[EvaluationCase, ...]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raise ValueError("Cannot read evaluation queries JSON") from None
-    if (not isinstance(payload, dict) or set(payload) != {"schema_version", "cases"}
-            or type(payload["schema_version"]) is not int or payload["schema_version"] != 1
-            or not isinstance(payload["cases"], list) or not payload["cases"]):
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"schema_version", "cases"}
+        or type(payload["schema_version"]) is not int
+        or payload["schema_version"] != 1
+        or not isinstance(payload["cases"], list)
+        or not payload["cases"]
+    ):
         raise ValueError("Evaluation queries require schema_version 1 and a non-empty cases list")
     cases, seen = [], set()
     for index, item in enumerate(payload["cases"], 1):
         identifier = item.get("case_id") if isinstance(item, dict) else None
-        label = identifier if isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9_-]+", identifier) else f"#{index}"
+        label = (
+            identifier if isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9_-]+", identifier) else f"#{index}"
+        )
         try:
             case = _parse_case(item)
             if case.case_id in seen:

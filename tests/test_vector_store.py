@@ -27,7 +27,9 @@ def test_existing_collection_can_be_reopened_without_deleting_data(tmp_path: Pat
     client = vector_store.create_chroma_client(chroma_dir)
     collection = client.create_collection(name="persistent_test", embedding_function=None)
     collection.add(
-        ids=["test-id"], embeddings=[[0.1, 0.2, 0.3]], documents=["test document"],
+        ids=["test-id"],
+        embeddings=[[0.1, 0.2, 0.3]],
+        documents=["test document"],
         metadatas=[{"source_file": "test.pdf"}],
     )
     before = collection.get(include=["documents", "metadatas"])

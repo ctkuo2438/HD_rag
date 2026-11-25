@@ -57,9 +57,7 @@ BASIC_INFO_FIELDS: tuple[str, ...] = (
     "signature",
 )
 
-_REVERSED_TO_CANONICAL = {
-    "-".join(reversed(channel.split("-"))): channel for channel in ALL_CHANNELS
-}
+_REVERSED_TO_CANONICAL = {"-".join(reversed(channel.split("-"))): channel for channel in ALL_CHANNELS}
 
 _KNOWN_WARNING_CODES = frozenset(code.value for code in ValidationCode)
 
@@ -112,14 +110,14 @@ def validate_evaluation_scope(golden: Mapping[str, object]) -> tuple[bool, bool]
     )
     for column_name in ("personality", "design"):
         column = _require_label_fields(
-            raw[column_name], PLANETARY_FIELDS, f"expected_raw_labels.{column_name}",
+            raw[column_name],
+            PLANETARY_FIELDS,
+            f"expected_raw_labels.{column_name}",
         )
         if include_derived:
             for field_name, value in column.items():
                 activation = _activation(value)
-                if activation is None or not (
-                    1 <= activation[0] <= 64 and 1 <= activation[1] <= 6
-                ):
+                if activation is None or not (1 <= activation[0] <= 64 and 1 <= activation[1] <= 6):
                     raise ValueError(
                         f"expected_raw_labels.{column_name}.{field_name} must be a valid "
                         "non-null activation when include_derived_metrics is true"
@@ -133,23 +131,23 @@ def validate_evaluation_scope(golden: Mapping[str, object]) -> tuple[bool, bool]
     derived = golden["expected_derived_labels"]
     if include_derived:
         if not isinstance(derived, Mapping):
-            raise ValueError(
-                "expected_derived_labels must be an object when include_derived_metrics is true"
-            )
+            raise ValueError("expected_derived_labels must be an object when include_derived_metrics is true")
         derived_collections = tuple(field for _, field, _ in _DERIVED_SET_SPECS)
         _require_label_fields(
-            derived, {"basic_info", *derived_collections}, "expected_derived_labels",
+            derived,
+            {"basic_info", *derived_collections},
+            "expected_derived_labels",
         )
         _require_label_fields(
-            derived["basic_info"], BASIC_INFO_FIELDS, "expected_derived_labels.basic_info",
+            derived["basic_info"],
+            BASIC_INFO_FIELDS,
+            "expected_derived_labels.basic_info",
         )
         for field in derived_collections:
             if not isinstance(derived[field], list):
                 raise ValueError(f"expected_derived_labels.{field} must be a list")
     elif derived is not None:
-        raise ValueError(
-            "expected_derived_labels must be null when include_derived_metrics is false"
-        )
+        raise ValueError("expected_derived_labels must be null when include_derived_metrics is false")
     return include_raw, include_derived
 
 
@@ -211,9 +209,7 @@ def evaluate_bodygraph_prediction(
         predicted_derived = _prediction_mapping(prediction, "derived_chart_data", "prediction")
         if not predicted_derived:
             case_warnings.append("Prediction is missing derived_chart_data.")
-        metrics.update(
-            _labeled_set_metrics(expected_derived, predicted_derived, _DERIVED_SET_SPECS)
-        )
+        metrics.update(_labeled_set_metrics(expected_derived, predicted_derived, _DERIVED_SET_SPECS))
         metrics.update(_basic_info_metrics(expected_derived, predicted_derived))
 
     expected_validation = _mapping(golden.get("expected_validation_result"))
@@ -228,9 +224,12 @@ def evaluate_bodygraph_prediction(
     if "warnings" in expected_validation:
         warning_codes(_tuple(expected_validation["warnings"]))
         if "warnings" not in predicted_validation:
-            metrics.update(dict.fromkeys(
-                ("warning_code_precision", "warning_code_recall", "warning_code_f1"), 0.0,
-            ))
+            metrics.update(
+                dict.fromkeys(
+                    ("warning_code_precision", "warning_code_recall", "warning_code_f1"),
+                    0.0,
+                )
+            )
         else:
             metrics.update(
                 warning_code_metrics(
@@ -290,10 +289,7 @@ def check_thresholds(
     A threshold on a metric name that never appears counts as 0.0 and fails,
     so a typo in a threshold name fails loudly instead of silently passing.
     """
-    return all(
-        metrics.get(metric_name, 0.0) >= threshold
-        for metric_name, threshold in thresholds.items()
-    )
+    return all(metrics.get(metric_name, 0.0) >= threshold for metric_name, threshold in thresholds.items())
 
 
 # ---------------------------------------------------------------------------
@@ -329,9 +325,7 @@ def _activation_metrics(
         if not expected_column:
             continue
         predicted_column = _prediction_mapping(predicted_raw, column_name, "raw_vision")
-        matches, eligible, respected, nulls = _activation_counts(
-            expected_column, predicted_column
-        )
+        matches, eligible, respected, nulls = _activation_counts(expected_column, predicted_column)
         total_matches += matches
         total_eligible += eligible
         total_respected += respected
@@ -455,11 +449,7 @@ def _validate_prediction_sets(source: Mapping[str, object], specs: tuple, label:
         for index, value in enumerate(values):
             normalized = normalize(value)
             if normalize is _normalize_gate:
-                valid = (
-                    isinstance(normalized, int)
-                    and not isinstance(normalized, bool)
-                    and 1 <= normalized <= 64
-                )
+                valid = isinstance(normalized, int) and not isinstance(normalized, bool) and 1 <= normalized <= 64
                 requirement = "an integer gate from 1-64 or its numeric string"
             elif normalize is _normalize_channel:
                 valid = isinstance(normalized, str) and normalized in ALL_CHANNELS
@@ -554,24 +544,15 @@ def warning_codes(warnings: Iterable[object]) -> set[str]:
     for index, warning in enumerate(warnings):
         code = _warning_code(warning)
         if code is None:
-            raise ValueError(
-                f"warnings[{index}] must be a warning code string or a "
-                "mapping with a string 'code' field"
-            )
+            raise ValueError(f"warnings[{index}] must be a warning code string or a mapping with a string 'code' field")
         if code not in _KNOWN_WARNING_CODES:
-            raise ValueError(
-                f"warnings[{index}] has unknown warning code"
-            )
+            raise ValueError(f"warnings[{index}] has unknown warning code")
         if isinstance(warning, Mapping):
             severity, affects_validity = warning_defaults(ValidationCode(code))
             if warning.get("severity", severity) != severity:
-                raise ValueError(
-                    f"warnings[{index}].severity must match canonical severity for {code}"
-                )
+                raise ValueError(f"warnings[{index}].severity must match canonical severity for {code}")
             if warning.get("affects_validity", affects_validity) is not affects_validity:
-                raise ValueError(
-                    f"warnings[{index}].affects_validity must match canonical value for {code}"
-                )
+                raise ValueError(f"warnings[{index}].affects_validity must match canonical value for {code}")
         codes.add(code)
     return codes
 
@@ -605,15 +586,9 @@ def _aggregate_case_metrics(
     so their support differs; keep golden labels consistent per metric if you
     want the aggregate to reflect the whole set.
     """
-    metric_names = sorted(
-        {name for case_result in per_case for name in case_result.metrics}
-    )
+    metric_names = sorted({name for case_result in per_case for name in case_result.metrics})
     return {
-        name: macro_average(
-            case_result.metrics[name]
-            for case_result in per_case
-            if name in case_result.metrics
-        )
+        name: macro_average(case_result.metrics[name] for case_result in per_case if name in case_result.metrics)
         for name in metric_names
     }
 
@@ -630,7 +605,9 @@ def _mapping(value: object) -> Mapping[str, object]:
 
 
 def _prediction_mapping(
-    source: Mapping[str, object], field_name: str, label: str,
+    source: Mapping[str, object],
+    field_name: str,
+    label: str,
 ) -> Mapping[str, object]:
     if field_name not in source:
         return {}  # No descendant fields were supplied; never synthesize their values.
@@ -641,7 +618,9 @@ def _prediction_mapping(
 
 
 def _require_label_fields(
-    value: object, fields: Iterable[str], label: str,
+    value: object,
+    fields: Iterable[str],
+    label: str,
 ) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be an object")

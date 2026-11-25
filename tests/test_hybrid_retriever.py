@@ -28,12 +28,21 @@ class FakeRetriever:
 
 
 def chunk(identity, *, dense=None, sparse=None, **changes):
-    return replace(RetrievedChunk(
-        identity, "Synthetic Gate 42 passage", "reference.pdf",
-        source_relpath="books/reference.pdf", page_label="7", page_number=7,
-        dense_rank=dense, dense_score=-0.2 if dense else None,
-        sparse_rank=sparse, sparse_score=150.0 if sparse else None,
-    ), **changes)
+    return replace(
+        RetrievedChunk(
+            identity,
+            "Synthetic Gate 42 passage",
+            "reference.pdf",
+            source_relpath="books/reference.pdf",
+            page_label="7",
+            page_number=7,
+            dense_rank=dense,
+            dense_score=-0.2 if dense else None,
+            sparse_rank=sparse,
+            sparse_score=150.0 if sparse else None,
+        ),
+        **changes,
+    )
 
 
 def config(**changes):
@@ -50,8 +59,13 @@ def test_separate_queries_top_k_identity_and_full_provenance():
     assert result.request is REQUEST
     assert result.ingestion_id == "canonical-build"
     assert result.ingestion_version == settings.ingestion_version
-    assert (result.dense_top_k, result.sparse_top_k, result.fusion_top_k,
-            result.final_top_k, result.rrf_k) == (3, 7, 9, 4, 60)
+    assert (result.dense_top_k, result.sparse_top_k, result.fusion_top_k, result.final_top_k, result.rrf_k) == (
+        3,
+        7,
+        9,
+        4,
+        60,
+    )
     assert result.rerank_provider is result.rerank_model is None
     shared, sparse_only, dense_only = result.candidates
     assert [c.chunk_id for c in result.candidates] == ["shared", "sparse", "dense"]
@@ -69,12 +83,12 @@ def test_raw_scores_do_not_change_fusion_order():
     def retrieve(score):
         return HybridRetriever(
             FakeRetriever([chunk("b", dense=1, dense_score=score)]),
-            FakeRetriever([chunk("a", sparse=1, sparse_score=-score)]), config(),
+            FakeRetriever([chunk("a", sparse=1, sparse_score=-score)]),
+            config(),
         ).retrieve(REQUEST)
+
     assert [c.chunk_id for c in retrieve(10000).candidates] == ["a", "b"]
-    assert [c.rrf_score for c in retrieve(10000).candidates] == [
-        c.rrf_score for c in retrieve(-10000).candidates
-    ]
+    assert [c.rrf_score for c in retrieve(10000).candidates] == [c.rrf_score for c in retrieve(-10000).candidates]
 
 
 def test_exact_tie_breaks_by_best_rank_then_lexical_id():
@@ -102,11 +116,17 @@ def test_repeated_hit_in_one_backend_counts_once_using_best_rank():
     assert result.candidates[0].rrf_score == 1 / 61
 
 
-@pytest.mark.parametrize("change", [
-    {"text": "conflicting synthetic text"}, {"source_file": "other.pdf"},
-    {"source_relpath": "other/reference.pdf"}, {"page_label": "8"}, {"page_number": 8},
-    {"metadata": {"source_sha256": "other-fingerprint"}},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"text": "conflicting synthetic text"},
+        {"source_file": "other.pdf"},
+        {"source_relpath": "other/reference.pdf"},
+        {"page_label": "8"},
+        {"page_number": 8},
+        {"metadata": {"source_sha256": "other-fingerprint"}},
+    ],
+)
 def test_conflicting_canonical_hits_fail(change):
     base = chunk("a", dense=1, metadata={"source_sha256": "original-fingerprint"})
     other = replace(base, dense_rank=None, dense_score=None, sparse_rank=1, **change)
@@ -115,10 +135,17 @@ def test_conflicting_canonical_hits_fail(change):
 
 
 def test_sanitizes_metadata_and_preserves_safe_fields():
-    candidate = chunk("a", dense=1, metadata={
-        "source_file": "reference.pdf", "page_number": 7,
-        "source_path": "/private/local/book.pdf", "private": "secret", "chunk_id": "a",
-    })
+    candidate = chunk(
+        "a",
+        dense=1,
+        metadata={
+            "source_file": "reference.pdf",
+            "page_number": 7,
+            "source_path": "/private/local/book.pdf",
+            "private": "secret",
+            "chunk_id": "a",
+        },
+    )
     result = HybridRetriever(FakeRetriever([candidate]), FakeRetriever(), config()).retrieve(REQUEST)
     actual = result.candidates[0]
     assert actual.source_relpath == "books/reference.pdf"

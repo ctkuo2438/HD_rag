@@ -80,8 +80,7 @@ _PAGES = (
     "Clarity comes over time rather than in the moment.",
     "Gate 5 is the Gate of Fixed Rhythms in the Sacral Center. It describes waiting "
     "patterns and consistent daily habits.",
-    "Channel 24-61 connects the Head Center and the Ajna Center. It describes "
-    "inspiration turning into inner knowing.",
+    "Channel 24-61 connects the Head Center and the Ajna Center. It describes inspiration turning into inner knowing.",
 )
 
 _DECISION = "How should I make decisions?"
@@ -96,8 +95,11 @@ def _scripted_answers(leak_url: str) -> dict[str, tuple[str, list[str]]]:
         "What is a Projector?": ("Projectors guide others and wait for the invitation [S1].", ["S1"]),
         "What does Gate 5 mean?": ("Gate 5 describes fixed rhythms and steady habits [S1].", ["S1"]),
         _GROUPED: ("Emotional Authority means waiting through the wave before deciding [S1, S2].", ["S1", "S2"]),
-        _EXFILTRATION: ("Sacral Authority is a gut response in the moment [S1].\n\n"
-                        f"![chart]({leak_url}?q=Sacral-Authority-question)", ["S1"]),
+        _EXFILTRATION: (
+            "Sacral Authority is a gut response in the moment [S1].\n\n"
+            f"![chart]({leak_url}?q=Sacral-Authority-question)",
+            ["S1"],
+        ),
         "How is Sacral Authority different?": ("It responds in the moment [S1]. See [S9].", ["S1"]),
         _DECISION: ("Your Type, Authority and Strategy can guide reflective decisions [S1].", ["S1"]),
         _PROFILE: ("Your Profile describes a reflective learning style [S1].", ["S1"]),
@@ -168,8 +170,12 @@ class Check:
 
 def _offline_config(work_dir: Path) -> AppConfig:
     # An explicit empty env never reads .env or process opt-ins, and holds no keys.
-    return replace(load_config(env={}), pdf_dir=work_dir / "pdfs", index_dir=work_dir / "index",
-                   generation_model="offline-smoke-model")
+    return replace(
+        load_config(env={}),
+        pdf_dir=work_dir / "pdfs",
+        index_dir=work_dir / "index",
+        generation_model="offline-smoke-model",
+    )
 
 
 def _embedding_opt_in(config: AppConfig) -> AppConfig:
@@ -203,9 +209,12 @@ def offline_pipeline(
     def generate(prompt: PromptContext, generation_config: AppConfig) -> AnswerResult:
         recorder.prompts.append(prompt)
         answer, used = answers[prompt.user_question]
-        payload = {"answer_markdown": answer, "used_source_ids": used,
-                   "used_chart_fact_paths": [fact.source_path for fact in prompt.chart_facts],
-                   "limitations": []}
+        payload = {
+            "answer_markdown": answer,
+            "used_source_ids": used,
+            "used_chart_fact_paths": [fact.source_path for fact in prompt.chart_facts],
+            "limitations": [],
+        }
         return generate_answer(prompt, generation_config, client=_AnswerModel(payload))
 
     manifest = load_manifest(config.index_dir / "manifest.json")
@@ -225,8 +234,11 @@ def _chart(edit: Callable[[dict[str, Any]], None] | None = None) -> BodyGraphExt
         edit(payload)
     parsed = parse_bodygraph_raw_extraction_json(json.dumps(payload))
     interpreted = interpret_bodygraph(parsed.raw_vision)
-    return BodyGraphExtractionResult(parsed.raw_vision, interpreted.derived_chart_data,
-        validate_bodygraph_extraction(parse_result=parsed, interpretation_result=interpreted))
+    return BodyGraphExtractionResult(
+        parsed.raw_vision,
+        interpreted.derived_chart_data,
+        validate_bodygraph_extraction(parse_result=parsed, interpretation_result=interpreted),
+    )
 
 
 def _head_ajna_only(payload: dict[str, Any]) -> None:
@@ -234,8 +246,12 @@ def _head_ajna_only(payload: dict[str, Any]) -> None:
     for column in ("personality", "design"):
         for index, planet in enumerate(PLANETARY_FIELDS):
             payload[column][planet] = f"{(24, 61)[index % 2]}.{index % 6 + 1}"
-    payload.update(visually_defined_centers=["Head", "Ajna"], visually_active_gates=[24, 61],
-                   visible_colored_channels=["24-61"], uncertain_items=[])
+    payload.update(
+        visually_defined_centers=["Head", "Ajna"],
+        visually_active_gates=[24, 61],
+        visible_colored_channels=["24-61"],
+        uncertain_items=[],
+    )
 
 
 def _missing_personality_sun(payload: dict[str, Any]) -> None:
@@ -257,13 +273,23 @@ def run_pipeline_checks(config: AppConfig) -> list[Check]:
     pipeline = offline_pipeline(config, recorder)
     checks: list[Check] = []
 
-    def ask(feature: str, name: str, question: str, expected: str, *,
-            chart: BodyGraphExtractionResult | None = None, verify: _Verify | None = None) -> None:
+    def ask(
+        feature: str,
+        name: str,
+        question: str,
+        expected: str,
+        *,
+        chart: BodyGraphExtractionResult | None = None,
+        verify: _Verify | None = None,
+    ) -> None:
         asked = len(recorder.prompts)
         result, error_code = None, None
         try:
-            result = (pipeline.answer_knowledge_question(KnowledgeQuestionRequest(question)) if chart is None
-                      else pipeline.answer_chart_question(ChartQuestionRequest(question, chart)))
+            result = (
+                pipeline.answer_knowledge_question(KnowledgeQuestionRequest(question))
+                if chart is None
+                else pipeline.answer_chart_question(ChartQuestionRequest(question, chart))
+            )
         except ReadingPipelineError as exc:
             match = re.search(r"\[(\w+)\]", str(exc))
             error_code = match[1] if match else "pipeline_error"
@@ -276,8 +302,11 @@ def run_pipeline_checks(config: AppConfig) -> list[Check]:
 
     def repeats_a_whole_source(result: AnswerResult | None, prompt: PromptContext | None) -> str | None:
         # The scenario only proves something if the answer contains a complete final passage.
-        echoed = result is not None and prompt is not None and any(
-            source.chunk.text.strip() in result.answer_markdown for source in prompt.sources)
+        echoed = (
+            result is not None
+            and prompt is not None
+            and any(source.chunk.text.strip() in result.answer_markdown for source in prompt.sources)
+        )
         return None if echoed else "precondition: the answer repeats no whole final source"
 
     def model_not_called(_result: AnswerResult | None, prompt: PromptContext | None) -> str | None:
@@ -295,18 +324,46 @@ def run_pipeline_checks(config: AppConfig) -> list[Check]:
 
     ask("F1", "Knowledge answer cites its source", "What is a Projector?", "status=ok citations=['S1']")
     ask("F2", "Grouped [S1, S2] cites both sources", _GROUPED, "status=ok citations=['S1', 'S2']")
-    ask("F3", "Short page among sources is not a private echo", "What does Gate 5 mean?",
-        "status=ok citations=['S1']", verify=repeats_a_whole_source)
+    ask(
+        "F3",
+        "Short page among sources is not a private echo",
+        "What does Gate 5 mean?",
+        "status=ok citations=['S1']",
+        verify=repeats_a_whole_source,
+    )
     ask("F4", "Markdown image in an answer is rejected", _EXFILTRATION, "error=unsafe_markdown")
     ask("F5", "Unknown citation is rejected", "How is Sacral Authority different?", "error=unknown_citation")
-    ask("F6", "Full-reading request asks for focus", "Give me a complete reading of my chart",
-        "status=needs_focus citations=[]", verify=model_not_called)
-    ask("F7", "Chart question uses the selected chart facts", _DECISION, "status=ok citations=['S1']",
-        chart=_chart(), verify=decision_facts)
-    ask("F8", "Underivable Authority never reaches the prompt", "What is my authority?",
-        "status=ok citations=['S1']", chart=_chart(_head_ajna_only), verify=no_unresolved_fact)
-    ask("F9", "Invalid chart stops before retrieval", _DECISION, "status=invalid_chart citations=[]",
-        chart=_chart(_missing_personality_sun), verify=model_not_called)
+    ask(
+        "F6",
+        "Full-reading request asks for focus",
+        "Give me a complete reading of my chart",
+        "status=needs_focus citations=[]",
+        verify=model_not_called,
+    )
+    ask(
+        "F7",
+        "Chart question uses the selected chart facts",
+        _DECISION,
+        "status=ok citations=['S1']",
+        chart=_chart(),
+        verify=decision_facts,
+    )
+    ask(
+        "F8",
+        "Underivable Authority never reaches the prompt",
+        "What is my authority?",
+        "status=ok citations=['S1']",
+        chart=_chart(_head_ajna_only),
+        verify=no_unresolved_fact,
+    )
+    ask(
+        "F9",
+        "Invalid chart stops before retrieval",
+        _DECISION,
+        "status=invalid_chart citations=[]",
+        chart=_chart(_missing_personality_sun),
+        verify=model_not_called,
+    )
     return checks
 
 
@@ -330,25 +387,43 @@ def run_ui_checks(config: AppConfig) -> list[Check]:
         return f"error={app.error[0].value}" if app.error else "ok"
 
     checks: list[Check] = []
-    with patch.object(human_design.reading, "ReadingPipeline",
-                      lambda: offline_pipeline(config, recorder, extractor=extract)):
+    with patch.object(
+        human_design.reading, "ReadingPipeline", lambda: offline_pipeline(config, recorder, extractor=extract)
+    ):
         app = AppTest.from_file(str(_APP), default_timeout=60).run()
         state = submit(app, _GROUPED)
         listed = [str(e.value).split("]", 1)[0] + "]" for e in app.text if str(e.value).startswith("[S")]
-        checks.append(Check("F2", "UI lists every grouped citation",
-                            state == "ok" and listed == ["[S1]", "[S2]"], f"{state} sources={listed}"))
+        checks.append(
+            Check(
+                "F2",
+                "UI lists every grouped citation",
+                state == "ok" and listed == ["[S1]", "[S2]"],
+                f"{state} sources={listed}",
+            )
+        )
 
         state = submit(app, _EXFILTRATION)
         rendered = " ".join(str(element.value) for element in app.markdown)
         blocked = "[unsafe_markdown]" in state and "](" not in rendered and "leak" not in rendered
-        checks.append(Check("F4", "UI shows unsafe_markdown and renders no image",
-                            blocked, "unsafe_markdown shown" if blocked else state))
+        checks.append(
+            Check(
+                "F4",
+                "UI shows unsafe_markdown and renders no image",
+                blocked,
+                "unsafe_markdown shown" if blocked else state,
+            )
+        )
 
         app.file_uploader[0].set_value(("chart.png", _CHART_IMAGE.read_bytes(), "image/png"))
         first, second = submit(app, _DECISION), submit(app, _PROFILE)
-        checks.append(Check("F10", "Second question on the same chart skips extraction",
-                            first == second == "ok" and len(extractions) == 1,
-                            f"answers={first},{second} extractions={len(extractions)}"))
+        checks.append(
+            Check(
+                "F10",
+                "Second question on the same chart skips extraction",
+                first == second == "ok" and len(extractions) == 1,
+                f"answers={first},{second} extractions={len(extractions)}",
+            )
+        )
     return checks
 
 
@@ -402,10 +477,23 @@ class _Chrome:
             os.close(high_reply)
 
         self._process = subprocess.Popen(
-            [executable, "--headless=new", "--remote-debugging-pipe", f"--user-data-dir={profile}",
-             "--no-first-run", "--no-default-browser-check", "--disable-background-networking",
-             "--disable-component-update", "--disable-sync", "--window-size=900,1400", "about:blank"],
-            close_fds=False, preexec_fn=map_pipes, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                executable,
+                "--headless=new",
+                "--remote-debugging-pipe",
+                f"--user-data-dir={profile}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-sync",
+                "--window-size=900,1400",
+                "about:blank",
+            ],
+            close_fds=False,
+            preexec_fn=map_pipes,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         os.close(command_read)
         os.close(reply_write)
@@ -414,8 +502,9 @@ class _Chrome:
         self._session: str | None = None
         try:
             target = next(t for t in self._send("Target.getTargets")["targetInfos"] if t["type"] == "page")
-            self._session = self._send("Target.attachToTarget",
-                                       {"targetId": target["targetId"], "flatten": True})["sessionId"]
+            self._session = self._send("Target.attachToTarget", {"targetId": target["targetId"], "flatten": True})[
+                "sessionId"
+            ]
         except Exception:
             self.close()
             raise
@@ -458,8 +547,10 @@ class _Chrome:
     def ask(self, question: str, done: str) -> bool:
         self.evaluate("(() => { const t = document.querySelector('textarea'); t.focus(); t.select(); })()")
         for kind in ("keyDown", "keyUp"):
-            self._send("Input.dispatchKeyEvent",
-                       {"type": kind, "key": "Backspace", "code": "Backspace", "windowsVirtualKeyCode": 8})
+            self._send(
+                "Input.dispatchKeyEvent",
+                {"type": kind, "key": "Backspace", "code": "Backspace", "windowsVirtualKeyCode": 8},
+            )
         self._send("Input.insertText", {"text": question})
         time.sleep(0.5)  # let Streamlit receive the edited value before submitting
         self.evaluate("[...document.querySelectorAll('button')].find(b => b.innerText.includes('送出問題')).click()")
@@ -491,10 +582,12 @@ class _Chrome:
 
 
 def _find_chrome() -> str | None:
-    candidates = [os.environ.get("HD_SMOKE_CHROME"),
-                  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                  "/Applications/Chromium.app/Contents/MacOS/Chromium",
-                  *map(shutil.which, ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"))]
+    candidates = [
+        os.environ.get("HD_SMOKE_CHROME"),
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        *map(shutil.which, ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")),
+    ]
     return next((c for c in candidates if c and Path(c).is_file()), None)
 
 
@@ -504,10 +597,25 @@ def _streamlit_server(work_dir: Path, leak_url: str) -> Generator[str, None, Non
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
     process = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", str(Path(__file__).resolve()),
-         "--server.headless=true", "--server.address=127.0.0.1", f"--server.port={port}",
-         "--browser.gatherUsageStats=false", "--", "--serve-app", str(work_dir), "--leak-url", leak_url],
-        cwd=_REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(Path(__file__).resolve()),
+            "--server.headless=true",
+            "--server.address=127.0.0.1",
+            f"--server.port={port}",
+            "--browser.gatherUsageStats=false",
+            "--",
+            "--serve-app",
+            str(work_dir),
+            "--leak-url",
+            leak_url,
+        ],
+        cwd=_REPO,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         deadline = time.monotonic() + 60
@@ -541,12 +649,21 @@ def run_browser_checks(work_dir: Path) -> list[Check]:
         browser = _Chrome(executable, work_dir / "chrome-profile")
         try:
             browser.open(url)
-            answered = browser.ask(_GROUPED, f"document.body.innerText.includes({json.dumps(_GROUPED)})"
-                                             " && document.body.innerText.includes('參考來源')")
+            answered = browser.ask(
+                _GROUPED,
+                f"document.body.innerText.includes({json.dumps(_GROUPED)})"
+                " && document.body.innerText.includes('參考來源')",
+            )
             listed = re.findall(r"^\[(S\d+)\]", browser.text(), re.MULTILINE)
             browser.screenshot(screenshots / "grouped_citations.png")
-            checks.append(Check("F2", "Browser lists every grouped citation",
-                                answered and listed == ["S1", "S2"], f"sources={listed}"))
+            checks.append(
+                Check(
+                    "F2",
+                    "Browser lists every grouped citation",
+                    answered and listed == ["S1", "S2"],
+                    f"sources={listed}",
+                )
+            )
 
             shown = browser.ask(_EXFILTRATION, "!!document.querySelector('[data-testid=\"stAlertContentError\"]')")
             error_shown = shown and "unsafe_markdown" in browser.text()
@@ -556,9 +673,14 @@ def run_browser_checks(work_dir: Path) -> list[Check]:
             time.sleep(1.0)
             reachable = any("probe=control" in path for path in leak.paths)
             fetched = [path for path in leak.paths if "probe=control" not in path]
-            checks.append(Check("F4", "Browser fetches nothing from a rejected answer",
-                                error_shown and reachable and not fetched,
-                                f"error_shown={error_shown} control_reached={reachable} answer_fetches={len(fetched)}"))
+            checks.append(
+                Check(
+                    "F4",
+                    "Browser fetches nothing from a rejected answer",
+                    error_shown and reachable and not fetched,
+                    f"error_shown={error_shown} control_reached={reachable} answer_fetches={len(fetched)}",
+                )
+            )
         finally:
             browser.close()
     return checks
@@ -570,9 +692,11 @@ def _serve_app(work_dir: Path, leak_url: str) -> None:
     chart = _chart()
     # Patch only while the app runs: Streamlit re-executes this script on every rerun,
     # and its own imports must keep resolving to the real ReadingPipeline.
-    with patch.object(human_design.reading, "ReadingPipeline",
-                      lambda: offline_pipeline(config, _Recorder(), leak_url=leak_url,
-                                               extractor=lambda _path: chart)):
+    with patch.object(
+        human_design.reading,
+        "ReadingPipeline",
+        lambda: offline_pipeline(config, _Recorder(), leak_url=leak_url, extractor=lambda _path: chart),
+    ):
         runpy.run_path(str(_APP), run_name="__main__")
 
 
@@ -593,11 +717,15 @@ def _run(work_dir: Path, browser: bool) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Offline smoke check of the real Q&A flow and Streamlit UI.")
-    parser.add_argument("--browser", action="store_true",
-                        help="also render answers in headless Chrome and save screenshots")
-    parser.add_argument("--work-dir", type=Path,
-                        help="new or empty directory that keeps the corpus, index and screenshots "
-                             "(default: a temporary directory, kept only with --browser)")
+    parser.add_argument(
+        "--browser", action="store_true", help="also render answers in headless Chrome and save screenshots"
+    )
+    parser.add_argument(
+        "--work-dir",
+        type=Path,
+        help="new or empty directory that keeps the corpus, index and screenshots "
+        "(default: a temporary directory, kept only with --browser)",
+    )
     parser.add_argument("--serve-app", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--leak-url", default=_LEAK_PLACEHOLDER, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)

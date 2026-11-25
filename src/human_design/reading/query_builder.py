@@ -41,12 +41,43 @@ _INTENTS = {
     "strategy": ("Strategy", "策略"),
     "profile": ("Profile", "人生角色"),
     "definition": ("Definition", "定義", "定义"),
-    "connection": ("Channel", "connect", "connects", "connection", "pair", "paired", "pairing", "通道", "連接", "连接", "配對", "配对"),
-    "activation": ("Gate", "Hexagram", "Line", "activation", "activations", "planet", "planetary", "Personality", "Design", "閘門", "闸门", "爻", "行星", "啟動", "启动"),
+    "connection": (
+        "Channel",
+        "connect",
+        "connects",
+        "connection",
+        "pair",
+        "paired",
+        "pairing",
+        "通道",
+        "連接",
+        "连接",
+        "配對",
+        "配对",
+    ),
+    "activation": (
+        "Gate",
+        "Hexagram",
+        "Line",
+        "activation",
+        "activations",
+        "planet",
+        "planetary",
+        "Personality",
+        "Design",
+        "閘門",
+        "闸门",
+        "爻",
+        "行星",
+        "啟動",
+        "启动",
+    ),
 }
 _DEFINITION_ALIASES = {
-    "Single Definition": ("一分人",), "Split Definition": ("二分人",),
-    "Triple Split Definition": ("三分人",), "Quadruple Split Definition": ("四分人",),
+    "Single Definition": ("一分人",),
+    "Split Definition": ("二分人",),
+    "Triple Split Definition": ("三分人",),
+    "Quadruple Split Definition": ("四分人",),
     "No Definition": ("無定義", "无定义"),
 }
 _STRATEGY_ALIASES = {
@@ -58,7 +89,8 @@ _STRATEGY_ALIASES = {
 _AUTHORITY_PHRASE = re.compile(
     r"\b(?:Sacral|Emotional|Solar\s+Plexus|Splenic|Ego(?:[- ]Projected|[- ]Manifested)?|Heart|Will|"
     r"Self[- ]Projected|Mental|Lunar)\s+Authority\b"
-    r"|(?:薦骨|荐骨|情緒|情绪|脾臟|脾脏|直覺|直觉|意志力|自我投射|心智|月亮)(?:權威|权威)", re.I,
+    r"|(?:薦骨|荐骨|情緒|情绪|脾臟|脾脏|直覺|直觉|意志力|自我投射|心智|月亮)(?:權威|权威)",
+    re.I,
 )
 _GATE_LINE = re.compile(r"(?<![\d.])([1-9]\d?)\.([1-6])(?![\d.])")
 
@@ -92,14 +124,21 @@ def _normalized_query(query: str) -> str:
 
 def _entities(text: str) -> tuple[set[int], set[str], set[tuple[int, int]]]:
     gates = {int(g) for g in re.findall(r"\b(?:Gate|Hexagram)\s+(\d{1,2})(?!\d)", text, re.I) if 1 <= int(g) <= 64}
-    channels = {"-".join(map(str, sorted((int(a), int(b)))))
-                for a, b in re.findall(r"\bChannel\s+(\d{1,2})-(\d{1,2})(?!\d)", text, re.I)}
+    channels = {
+        "-".join(map(str, sorted((int(a), int(b)))))
+        for a, b in re.findall(r"\bChannel\s+(\d{1,2})-(\d{1,2})(?!\d)", text, re.I)
+    }
     gate_lines = {(int(g), int(line)) for g, line in _GATE_LINE.findall(text) if 1 <= int(g) <= 64}
     return gates | {g for g, _ in gate_lines}, channels, gate_lines
 
 
 def _activation_matches(
-    fact: ChartFact, *, gates: set[int], columns: set[str], planets: set[str], lines: set[int],
+    fact: ChartFact,
+    *,
+    gates: set[int],
+    columns: set[str],
+    planets: set[str],
+    lines: set[int],
     gate_lines: set[tuple[int, int]],
 ) -> bool:
     if fact.field not in {"personality_activation", "design_activation"} or not isinstance(fact.value, str):
@@ -109,9 +148,13 @@ def _activation_matches(
         return False
     column, planet = fact.source_path.split(".")[1:]
     gate, line = map(int, match.groups())
-    return (not gates or gate in gates) and (not lines or line in lines) and (
-        not columns or column in columns) and (not planets or planet in planets) and (
-        not gate_lines or (gate, line) in gate_lines)
+    return (
+        (not gates or gate in gates)
+        and (not lines or line in lines)
+        and (not columns or column in columns)
+        and (not planets or planet in planets)
+        and (not gate_lines or (gate, line) in gate_lines)
+    )
 
 
 def _select_facts(query: str, normalized: str, context: ChartContext) -> tuple[ChartFact, ...]:
@@ -120,15 +163,20 @@ def _select_facts(query: str, normalized: str, context: ChartContext) -> tuple[C
     endpoints = {int(g) for c in channels for g in c.split("-")}
     columns = {c for c in ("personality", "design") if _contains(normalized, c)}
     planets = {p for p in PLANETARY_FIELDS if _contains(normalized, p.replace("_", " "))}
-    lines = {int(line) for line in re.findall(r"\bLine\s+([1-6])(?!\d)", normalized, re.I)} | {line for _, line in gate_lines}
+    lines = {int(line) for line in re.findall(r"\bLine\s+([1-6])(?!\d)", normalized, re.I)} | {
+        line for _, line in gate_lines
+    }
     selected: set[str] = set()
 
     def add(predicate: Callable[[ChartFact], bool]) -> None:
         selected.update(f.source_path for f in context.facts if predicate(f))
 
     def activations(matching_gates: set[int]) -> None:
-        add(lambda f: _activation_matches(f, gates=matching_gates, columns=columns, planets=planets,
-                                          lines=lines, gate_lines=gate_lines))
+        add(
+            lambda f: _activation_matches(
+                f, gates=matching_gates, columns=columns, planets=planets, lines=lines, gate_lines=gate_lines
+            )
+        )
 
     def basic(*names: str) -> None:
         add(lambda f: f.field in names)
@@ -154,8 +202,12 @@ def _select_facts(query: str, normalized: str, context: ChartContext) -> tuple[C
                 if _intent(normalized, "connection") and not channel_terms:
                     add(lambda f: f.field == "active_channel" and bool(gates & set(map(int, str(f.value).split("-")))))
             if channels:
-                add(lambda f: (f.field == "active_channel" and f.value in channels)
-                    or (f.field == "active_gate" and f.value in endpoints))
+                add(
+                    lambda f: (
+                        (f.field == "active_channel" and f.value in channels)
+                        or (f.field == "active_gate" and f.value in endpoints)
+                    )
+                )
                 if _intent(normalized, "activation"):
                     activations(gates or endpoints)
             if _intent(normalized, "decision") and not gates and not channel_terms:
@@ -168,8 +220,13 @@ def _select_facts(query: str, normalized: str, context: ChartContext) -> tuple[C
                 for name in ("profile", "definition"):
                     if _intent(normalized, name):
                         basic(name)
-                if not (gates or channel_terms or any(_intent(normalized, name) for name in
-                        ("authority", "type", "strategy", "profile", "definition"))):
+                if not (
+                    gates
+                    or channel_terms
+                    or any(
+                        _intent(normalized, name) for name in ("authority", "type", "strategy", "profile", "definition")
+                    )
+                ):
                     basic("type", "authority", "profile")
     return tuple(f for f in context.facts if f.source_path in selected)
 
@@ -201,7 +258,8 @@ def _fact_terms(fact: ChartFact) -> str:
 
 
 def build_retrieval_queries(
-    user_query: str, chart_context: ChartContext | None,
+    user_query: str,
+    chart_context: ChartContext | None,
 ) -> tuple[HybridSearchRequest, tuple[ChartFact, ...]]:
     original = validate_query(user_query)
     normalized = _normalized_query(original)

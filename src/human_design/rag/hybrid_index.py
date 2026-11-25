@@ -91,9 +91,13 @@ def compute_chunk_id(source_sha256: str, page_key: str, chunk_index: int, text: 
 def fingerprint_sources(pdf_dir: Path) -> tuple[SourceFingerprint, ...]:
     """Use shared PDF discovery; reject duplicate bytes before creating any nodes."""
     try:
-        sources = tuple(SourceFingerprint(
-            path.relative_to(pdf_dir).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest(),
-        ) for path in discover_pdfs(pdf_dir))
+        sources = tuple(
+            SourceFingerprint(
+                path.relative_to(pdf_dir).as_posix(),
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+            )
+            for path in discover_pdfs(pdf_dir)
+        )
     except OSError:
         raise HybridIndexError("Cannot discover or read configured PDF sources") from None
     _validate_sources(sources)
@@ -107,9 +111,7 @@ def _validate_sources(sources: Sequence[SourceFingerprint]) -> None:
         if not _safe_relative(source.source_relpath) or not _SHA256.fullmatch(source.source_sha256):
             raise HybridIndexError("Invalid source fingerprint or relative identity")
         if source.source_sha256 in hashes:
-            raise HybridIndexError(
-                f"duplicate source bytes: {hashes[source.source_sha256]}, {source.source_relpath}"
-            )
+            raise HybridIndexError(f"duplicate source bytes: {hashes[source.source_sha256]}, {source.source_relpath}")
         if source.source_relpath in names:
             raise HybridIndexError("Duplicate source relative identity")
         hashes[source.source_sha256] = source.source_relpath
@@ -117,7 +119,9 @@ def _validate_sources(sources: Sequence[SourceFingerprint]) -> None:
 
 
 def create_canonical_nodes(
-    chunks: Sequence[BaseNode], sources: Sequence[SourceFingerprint], pdf_dir: Path,
+    chunks: Sequence[BaseNode],
+    sources: Sequence[SourceFingerprint],
+    pdf_dir: Path,
 ) -> list[TextNode]:
     _validate_sources(sources)
     fingerprints = {source.source_relpath: source.source_sha256 for source in sources}
@@ -144,8 +148,14 @@ def create_canonical_nodes(
         ordinal = ordinals[source_sha256, page_key]
         ordinals[source_sha256, page_key] += 1
         chunk_id = compute_chunk_id(source_sha256, page_key, ordinal, text)
-        metadata.update(chunk_id=chunk_id, source_sha256=source_sha256, source_relpath=relative,
-                        source_file=PurePosixPath(relative).name, page_key=page_key, chunk_index=ordinal)
+        metadata.update(
+            chunk_id=chunk_id,
+            source_sha256=source_sha256,
+            source_relpath=relative,
+            source_file=PurePosixPath(relative).name,
+            page_key=page_key,
+            chunk_index=ordinal,
+        )
         nodes.append(_text_node(chunk_id, text, metadata))
     validate_canonical_nodes(nodes)
     return nodes
@@ -157,8 +167,13 @@ def _text_node(chunk_id: str, text: str, metadata: dict) -> TextNode:
     except (TypeError, ValueError):
         raise HybridIndexError("Canonical metadata must be JSON-safe") from None
     # Index only the original passage text, never local diagnostics or synthetic lexical terms.
-    return TextNode(id_=chunk_id, text=text, metadata=copied,
-                    excluded_embed_metadata_keys=list(metadata), excluded_llm_metadata_keys=list(metadata))
+    return TextNode(
+        id_=chunk_id,
+        text=text,
+        metadata=copied,
+        excluded_embed_metadata_keys=list(metadata),
+        excluded_llm_metadata_keys=list(metadata),
+    )
 
 
 def validate_canonical_nodes(nodes: Sequence[BaseNode], manifest: HybridManifest | None = None) -> None:
@@ -175,12 +190,15 @@ def validate_canonical_nodes(nodes: Sequence[BaseNode], manifest: HybridManifest
             if type(index) is not int or index < 0:
                 raise ValueError
             text = node.get_content(metadata_mode=MetadataMode.NONE)
-            if (not _safe_relative(metadata["source_relpath"])
-                    or not _SHA256.fullmatch(metadata["source_sha256"])
-                    or metadata["source_file"] != PurePosixPath(metadata["source_relpath"]).name
-                    or metadata["chunk_id"] != node.node_id or normalize_chunk_text(text) != text
-                    or metadata["page_key"] != stable_page_key(metadata)
-                    or compute_chunk_id(metadata["source_sha256"], metadata["page_key"], index, text) != node.node_id):
+            if (
+                not _safe_relative(metadata["source_relpath"])
+                or not _SHA256.fullmatch(metadata["source_sha256"])
+                or metadata["source_file"] != PurePosixPath(metadata["source_relpath"]).name
+                or metadata["chunk_id"] != node.node_id
+                or normalize_chunk_text(text) != text
+                or metadata["page_key"] != stable_page_key(metadata)
+                or compute_chunk_id(metadata["source_sha256"], metadata["page_key"], index, text) != node.node_id
+            ):
                 raise ValueError
         except (KeyError, TypeError, ValueError):
             raise HybridIndexError("Canonical node identity mismatch") from None
@@ -195,21 +213,28 @@ def validate_canonical_nodes(nodes: Sequence[BaseNode], manifest: HybridManifest
 
 
 def _corpus_fingerprint(nodes: Sequence[BaseNode], sources: Sequence[SourceFingerprint]) -> str:
-    return _digest({"source_fingerprints": [asdict(source) for source in sources],
-                    "chunk_ids": [node.node_id for node in nodes]})
+    return _digest(
+        {"source_fingerprints": [asdict(source) for source in sources], "chunk_ids": [node.node_id for node in nodes]}
+    )
 
 
 def create_manifest(
-    nodes: Sequence[BaseNode], sources: Sequence[SourceFingerprint], config: AppConfig,
+    nodes: Sequence[BaseNode],
+    sources: Sequence[SourceFingerprint],
+    config: AppConfig,
 ) -> HybridManifest:
     validate_canonical_nodes(nodes)
     _validate_sources(sources)
     payload = dict(
-        schema_version=SCHEMA_VERSION, ingestion_version=config.ingestion_version,
+        schema_version=SCHEMA_VERSION,
+        ingestion_version=config.ingestion_version,
         corpus_fingerprint=_corpus_fingerprint(nodes, sources),
-        source_fingerprints=[asdict(source) for source in sources], chunk_count=len(nodes),
-        chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap,
-        embedding_model=config.embedding_model, collection_name=COLLECTION_NAME,
+        source_fingerprints=[asdict(source) for source in sources],
+        chunk_count=len(nodes),
+        chunk_size=config.chunk_size,
+        chunk_overlap=config.chunk_overlap,
+        embedding_model=config.embedding_model,
+        collection_name=COLLECTION_NAME,
         chunk_id_algorithm=CHUNK_ID_ALGORITHM,
     )
     manifest = HybridManifest(**(payload | {"source_fingerprints": tuple(sources), "ingestion_id": _digest(payload)}))
@@ -241,8 +266,17 @@ def _write_new(path: Path, content: str, artifact: str) -> None:
 
 def write_nodes(path: Path, nodes: Sequence[BaseNode]) -> None:
     validate_canonical_nodes(nodes)
-    content = "".join(canonical_json({"chunk_id": node.node_id,
-        "text": node.get_content(metadata_mode=MetadataMode.NONE), "metadata": node.metadata}) + "\n" for node in nodes)
+    content = "".join(
+        canonical_json(
+            {
+                "chunk_id": node.node_id,
+                "text": node.get_content(metadata_mode=MetadataMode.NONE),
+                "metadata": node.metadata,
+            }
+        )
+        + "\n"
+        for node in nodes
+    )
     _write_new(path, content, "nodes.jsonl")
 
 
@@ -275,7 +309,11 @@ def load_nodes(path: Path, manifest: HybridManifest | None = None) -> list[TextN
             row = _read_json(line)
             if not isinstance(row, dict) or set(row) != {"chunk_id", "text", "metadata"}:
                 raise ValueError
-            if not isinstance(row["chunk_id"], str) or not isinstance(row["text"], str) or not isinstance(row["metadata"], dict):
+            if (
+                not isinstance(row["chunk_id"], str)
+                or not isinstance(row["text"], str)
+                or not isinstance(row["metadata"], dict)
+            ):
                 raise ValueError
             nodes.append(_text_node(row["chunk_id"], row["text"], row["metadata"]))
     except (OSError, ValueError, TypeError):
@@ -293,8 +331,11 @@ def _manifest_from_dict(payload: dict) -> HybridManifest:
         values["source_fingerprints"] = tuple(SourceFingerprint(**source) for source in payload["source_fingerprints"])
         manifest = HybridManifest(**values)
         _validate_sources(manifest.source_fingerprints)
-        if (manifest.schema_version != SCHEMA_VERSION or manifest.collection_name != COLLECTION_NAME
-                or manifest.chunk_id_algorithm != CHUNK_ID_ALGORITHM):
+        if (
+            manifest.schema_version != SCHEMA_VERSION
+            or manifest.collection_name != COLLECTION_NAME
+            or manifest.chunk_id_algorithm != CHUNK_ID_ALGORITHM
+        ):
             raise ValueError
         for number in (manifest.chunk_count, manifest.chunk_size, manifest.chunk_overlap):
             if type(number) is not int or number < 0:
@@ -319,17 +360,32 @@ def load_manifest(path: Path) -> HybridManifest:
 
 
 def _safe_relative(value: str) -> bool:
-    return (isinstance(value, str) and bool(value.strip()) and not PurePosixPath(value).is_absolute()
-            and not PureWindowsPath(value).anchor and ".." not in PureWindowsPath(value).parts
-            and not value.lower().startswith("file:"))
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not PurePosixPath(value).is_absolute()
+        and not PureWindowsPath(value).anchor
+        and ".." not in PureWindowsPath(value).parts
+        and not value.lower().startswith("file:")
+    )
 
 
 def safe_source_metadata(metadata: Mapping[str, object]) -> dict[str, JsonValue]:
     """Allowlist useful provenance, excluding private/local diagnostic fields."""
     result: dict[str, JsonValue] = {}
-    for name in ("chunk_id", "source_sha256", "source_file", "source_relpath", "document_title",
-                 "page_label", "page_number", "chunk_size", "chunk_overlap", "embedding_model",
-                 "ingestion_version"):
+    for name in (
+        "chunk_id",
+        "source_sha256",
+        "source_file",
+        "source_relpath",
+        "document_title",
+        "page_label",
+        "page_number",
+        "chunk_size",
+        "chunk_overlap",
+        "embedding_model",
+        "ingestion_version",
+    ):
         value = metadata.get(name)
         if type(value) in (str, int, float, bool) or value is None:
             if isinstance(value, str):
@@ -353,14 +409,22 @@ def require_real_embeddings(config: AppConfig) -> None:
 
 
 def _dense_metadata(nodes: Sequence[BaseNode], manifest: HybridManifest) -> dict[str, str | int]:
-    return {"embedding_model": manifest.embedding_model, "ingestion_id": manifest.ingestion_id,
-            "schema_version": manifest.schema_version, "ingestion_version": manifest.ingestion_version,
-            "corpus_fingerprint": manifest.corpus_fingerprint, "chunk_count": manifest.chunk_count,
-            "ordered_chunk_ids_sha256": _digest([node.node_id for node in nodes])}
+    return {
+        "embedding_model": manifest.embedding_model,
+        "ingestion_id": manifest.ingestion_id,
+        "schema_version": manifest.schema_version,
+        "ingestion_version": manifest.ingestion_version,
+        "corpus_fingerprint": manifest.corpus_fingerprint,
+        "chunk_count": manifest.chunk_count,
+        "ordered_chunk_ids_sha256": _digest([node.node_id for node in nodes]),
+    }
 
 
 def build_phase3_chroma(
-    nodes: list[BaseNode], config: AppConfig, manifest: HybridManifest, embed_model: BaseEmbedding,
+    nodes: list[BaseNode],
+    config: AppConfig,
+    manifest: HybridManifest,
+    embed_model: BaseEmbedding,
 ) -> None:
     """Build only a fresh Phase 3 collection from this run's canonical node objects."""
     _manifest_from_dict(asdict(manifest))
@@ -370,11 +434,17 @@ def build_phase3_chroma(
     try:
         client = create_chroma_client(directory)
         collection = client.create_collection(
-            name=COLLECTION_NAME, metadata=_dense_metadata(nodes, manifest), embedding_function=None,
+            name=COLLECTION_NAME,
+            metadata=_dense_metadata(nodes, manifest),
+            embedding_function=None,
         )
         store = ChromaVectorStore(chroma_collection=collection)
-        VectorStoreIndex(nodes, storage_context=StorageContext.from_defaults(vector_store=store),
-                         embed_model=embed_model, show_progress=False)
+        VectorStoreIndex(
+            nodes,
+            storage_context=StorageContext.from_defaults(vector_store=store),
+            embed_model=embed_model,
+            show_progress=False,
+        )
         _validate_dense_collection(collection, manifest, nodes)
     except HybridIndexError:
         raise
@@ -439,8 +509,13 @@ def build_hybrid_index(config: AppConfig, *, embed_model: BaseEmbedding | None =
     try:
         documents = load_pdfs(config.pdf_dir)
         report = build_text_extraction_report(config.pdf_dir, documents=documents)
-        chunks, _ = chunk_documents(documents, chunk_size=config.chunk_size, chunk_overlap=config.chunk_overlap,
-                                    embedding_model=config.embedding_model, ingestion_version=config.ingestion_version)
+        chunks, _ = chunk_documents(
+            documents,
+            chunk_size=config.chunk_size,
+            chunk_overlap=config.chunk_overlap,
+            embedding_model=config.embedding_model,
+            ingestion_version=config.ingestion_version,
+        )
     except Exception:
         raise HybridIndexError("Cannot extract or chunk configured PDF sources") from None
     sources = fingerprint_sources(config.pdf_dir)

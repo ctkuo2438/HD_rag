@@ -47,13 +47,17 @@ def _require_final_sources(context: PromptContext) -> None:
 
 
 def build_prompt_context(
-    user_question: str, selected_facts: Sequence[ChartFact], final_chunks: Sequence[RetrievedChunk],
+    user_question: str,
+    selected_facts: Sequence[ChartFact],
+    final_chunks: Sequence[RetrievedChunk],
 ) -> PromptContext:
     """Accept only Task 36 selected facts and sources already selected after fusion/reranking."""
     validate_query(user_question)
-    context = PromptContext(user_question, tuple(selected_facts), tuple(
-        PromptSource(f"S{index}", _safe_chunk(chunk)) for index, chunk in enumerate(final_chunks, 1)
-    ))
+    context = PromptContext(
+        user_question,
+        tuple(selected_facts),
+        tuple(PromptSource(f"S{index}", _safe_chunk(chunk)) for index, chunk in enumerate(final_chunks, 1)),
+    )
     _require_final_sources(context)
     return context
 
@@ -61,10 +65,17 @@ def build_prompt_context(
 def build_source_citations(context: PromptContext) -> tuple[SourceCitation, ...]:
     """Project only public display fields, never paths, passages, diagnostics, or scores."""
     _require_final_sources(context)
-    return tuple(SourceCitation(
-        source.citation_id, source.chunk.chunk_id, source.chunk.source_file,
-        source.chunk.document_title, source.chunk.page_label, source.chunk.page_number,
-    ) for source in context.sources)
+    return tuple(
+        SourceCitation(
+            source.citation_id,
+            source.chunk.chunk_id,
+            source.chunk.source_file,
+            source.chunk.document_title,
+            source.chunk.page_label,
+            source.chunk.page_number,
+        )
+        for source in context.sources
+    )
 
 
 def render_reading_prompt(context: PromptContext) -> str:
@@ -72,18 +83,25 @@ def render_reading_prompt(context: PromptContext) -> str:
     _require_final_sources(context)
     chart_facts = "\n".join(
         f'  <fact field="{escape(f.field, quote=True)}" source_path="{escape(f.source_path, quote=True)}">'
-        f'{escape(str(f.value), quote=True)}</fact>' for f in context.chart_facts
+        f"{escape(str(f.value), quote=True)}</fact>"
+        for f in context.chart_facts
     )
     sources = []
     for source in context.sources:
         chunk = source.chunk
-        attributes = {"id": source.citation_id, "file": chunk.source_file,
-                      "title": chunk.document_title, "page": chunk.page_label, "page_number": chunk.page_number}
+        attributes = {
+            "id": source.citation_id,
+            "file": chunk.source_file,
+            "title": chunk.document_title,
+            "page": chunk.page_label,
+            "page_number": chunk.page_number,
+        }
         rendered_attributes = " ".join(
             f'{key}="{escape(str(value), quote=True)}"' for key, value in attributes.items() if value is not None
         )
         sources.append(f"  <source {rendered_attributes}>{escape(chunk.text, quote=True)}</source>")
     return load_reading_prompt().format(
         user_question=escape(context.user_question, quote=True),
-        chart_facts=chart_facts, reference_sources="\n".join(sources),
+        chart_facts=chart_facts,
+        reference_sources="\n".join(sources),
     )

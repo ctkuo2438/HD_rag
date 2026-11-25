@@ -37,8 +37,8 @@ class TextExtractionReport:
 class ChunkingResult:
     document_count: int
     chunk_count: int
-    chunk_size: int # 800 by default
-    chunk_overlap: int # 80 by default
+    chunk_size: int  # 800 by default
+    chunk_overlap: int  # 80 by default
 
 
 @dataclass(frozen=True)
@@ -154,8 +154,11 @@ class HybridRetrievalResult:
 def _validate_relative_source(value: str, name: str, *, basename: bool = False) -> None:
     posix, windows = PurePosixPath(value), PureWindowsPath(value)
     if (
-        not value.strip() or value.lower().startswith("file:")
-        or posix.is_absolute() or windows.anchor or ".." in windows.parts
+        not value.strip()
+        or value.lower().startswith("file:")
+        or posix.is_absolute()
+        or windows.anchor
+        or ".." in windows.parts
         or (basename and ("/" in value or "\\" in value or value == "."))
     ):
         raise ValueError(f"{name} must be a safe {'basename' if basename else 'relative path'}")

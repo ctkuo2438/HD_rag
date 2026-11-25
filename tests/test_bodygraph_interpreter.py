@@ -99,10 +99,7 @@ def _raw_with_gates(
     personality: dict[str, Activation | None] = {}
     design: dict[str, Activation | None] = {}
     positions = (
-        *(
-            ("personality", field_name)
-            for field_name in PLANET_FIELDS
-        ),
+        *(("personality", field_name) for field_name in PLANET_FIELDS),
         *(("design", field_name) for field_name in PLANET_FIELDS),
     )
 
@@ -178,9 +175,7 @@ def test_active_channels_derive_required_canonical_pairs(
 def test_active_channels_use_all_channels_order_and_never_fake_channels() -> None:
     active_gates = {3, 10, 34, 57, 60, 99}
     expected = tuple(
-        channel
-        for channel in ALL_CHANNELS
-        if all(int(gate) in active_gates for gate in channel.split("-"))
+        channel for channel in ALL_CHANNELS if all(int(gate) in active_gates for gate in channel.split("-"))
     )
 
     active_channels = derive_active_channels(active_gates)
@@ -255,9 +250,7 @@ def test_representative_channel_mappings_are_consumed(
 
     assert CHANNEL_TO_CENTERS[channel] == centers
     assert set(derived_centers) == set(centers)
-    assert derived_centers == tuple(
-        center for center in CANONICAL_CENTERS if center in centers
-    )
+    assert derived_centers == tuple(center for center in CANONICAL_CENTERS if center in centers)
 
 
 def test_profile_derives_from_personality_and_design_sun_lines() -> None:

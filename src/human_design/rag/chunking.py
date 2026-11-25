@@ -16,13 +16,13 @@ from human_design.rag.models import ChunkingResult
 
 
 def chunk_documents(
-        documents: list[Document],
-        *,
-        chunk_size: int = DEFAULT_CHUNK_SIZE,
-        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP, 
-        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
-        ingestion_version: str = DEFAULT_INGESTION_VERSION,
-    ) -> tuple[list[BaseNode], ChunkingResult]:
+    documents: list[Document],
+    *,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+    ingestion_version: str = DEFAULT_INGESTION_VERSION,
+) -> tuple[list[BaseNode], ChunkingResult]:
 
     # use LlamaIndex's SentenceSplitter to chunk the documents into nodes
     splitter = SentenceSplitter(
@@ -49,13 +49,8 @@ def chunk_documents(
 
 
 def _normalize_node_metadata(
-        node: BaseNode, 
-        *,
-        chunk_size: int, 
-        chunk_overlap: int, 
-        embedding_model: str, 
-        ingestion_version: str
-    ) -> None:
+    node: BaseNode, *, chunk_size: int, chunk_overlap: int, embedding_model: str, ingestion_version: str
+) -> None:
     metadata = dict(node.metadata)
 
     file_name = metadata.get("file_name")

@@ -131,9 +131,7 @@ CHANNEL_TO_CENTERS: dict[str, tuple[str, str]] = {
     "47-64": ("Ajna", "Head"),
 }
 
-MOTOR_CENTERS: frozenset[str] = frozenset(
-    {"Root", "Sacral", "Solar Plexus", "Ego"}
-)
+MOTOR_CENTERS: frozenset[str] = frozenset({"Root", "Sacral", "Solar Plexus", "Ego"})
 
 # Derived basic-info placeholders meaning the rules could not determine the value.
 UNRESOLVED_BASIC_INFO_VALUES: frozenset[str] = frozenset({"Needs Review", "Unknown"})

@@ -27,9 +27,7 @@ def discover_pdfs(pdf_dir: Path = DEFAULT_PDF_DIR) -> list[Path]:
     if not pdf_dir.is_dir():
         raise NoPdfFilesFoundError(f"PDF path is not a directory: {pdf_dir}")
 
-    pdf_paths = sorted(
-        path for path in pdf_dir.iterdir() if path.is_file() and path.suffix.lower() == ".pdf"
-    )
+    pdf_paths = sorted(path for path in pdf_dir.iterdir() if path.is_file() and path.suffix.lower() == ".pdf")
     if not pdf_paths:
         raise NoPdfFilesFoundError(f"No PDF files found in: {pdf_dir}")
     return pdf_paths
@@ -89,9 +87,9 @@ def build_text_extraction_report(
     low_text_documents: list[LowTextDocument] = []
     for document in report_documents:
         text = document.text or ""
-        stripped_text = text.strip() # only non-whitespace characters
-        text_length = len(stripped_text) # character count, not token count
-        total_text_characters += text_length # sum of text lengths across all documents
+        stripped_text = text.strip()  # only non-whitespace characters
+        text_length = len(stripped_text)  # character count, not token count
+        total_text_characters += text_length  # sum of text lengths across all documents
 
         if text_length < low_text_threshold:
             low_text_documents.append(
@@ -117,7 +115,7 @@ def build_text_extraction_report(
 
 def _metadata_str(document: Document, key: str) -> str | None:
     # load_pdf() will return list[Document]
-    '''
+    """
     Document looks like this:
         Document(
         text="words on page 12 ...",
@@ -129,7 +127,7 @@ def _metadata_str(document: Document, key: str) -> str | None:
         }
     )
     so value = document.metadata.get(key) will be like "data/pdfs/book.pdf" or "12"
-    '''
+    """
     value = document.metadata.get(key)
     if value is None:
         return None

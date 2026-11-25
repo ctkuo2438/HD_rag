@@ -40,7 +40,7 @@ def case(**changes):
     return replace(EvaluationCase("gate42", REQUEST, ("Gate 42",)), **changes)
 
 
-@pytest.mark.parametrize("rank,hit,rr", [(1, 1, 1), (5, 1, 1/5), (6, 0, 1/6), (20, 0, 1/20), (21, 0, 0)])
+@pytest.mark.parametrize("rank,hit,rr", [(1, 1, 1), (5, 1, 1 / 5), (6, 0, 1 / 6), (20, 0, 1 / 20), (21, 0, 0)])
 def test_rank_boundaries(rank, hit, rr):
     ranked = [chunk() for _ in range(rank - 1)] + [chunk("Gate 42 is a synthetic entity label.")]
     metrics = score_query(case(), ranked)
@@ -56,14 +56,23 @@ def test_empty_results_and_missing_hit():
         assert (metrics.hit_at_5, metrics.mrr_at_20, metrics.exact_entity_hit_rate) == (0, 0, 0)
 
 
-@pytest.mark.parametrize("entity,text,expected", [
-    ("Gate 4", "Gate 42", 0), ("Gate 42", "Gate 420", 0),
-    ("Channel 42-53", "Channel 42-530", 0), ("Profile 4/6", "Profile 4/60", 0),
-    ("Generator", "Regenerator", 0), ("Generator", "Manifesting Generator", 0),
-    ("Gate 42", "(gAtE   42).", 1), ("Channel 42-53", "Channel 42–53.", 1),
-    ("Profile 4/6", "Profile 4 / 6.", 1), ("G", "G中心", 0),
-    ("G", "The G Center", 1), ("Ego", "Ego Center", 1),
-])
+@pytest.mark.parametrize(
+    "entity,text,expected",
+    [
+        ("Gate 4", "Gate 42", 0),
+        ("Gate 42", "Gate 420", 0),
+        ("Channel 42-53", "Channel 42-530", 0),
+        ("Profile 4/6", "Profile 4/60", 0),
+        ("Generator", "Regenerator", 0),
+        ("Generator", "Manifesting Generator", 0),
+        ("Gate 42", "(gAtE   42).", 1),
+        ("Channel 42-53", "Channel 42–53.", 1),
+        ("Profile 4/6", "Profile 4 / 6.", 1),
+        ("G", "G中心", 0),
+        ("G", "The G Center", 1),
+        ("Ego", "Ego Center", 1),
+    ],
+)
 def test_exact_normalized_entity_matching(entity, text, expected):
     assert score_query(case(expected_entities=(entity,)), [chunk(text)]).exact_entity_hit_rate == expected
 
@@ -74,7 +83,9 @@ def test_entity_rate_measures_labeled_entity_coverage():
 
 
 def test_source_page_labels_match_safe_public_fields_together():
-    labeled = case(expected_entities=(), expected_sources=({"source_relpath": "books/reference.pdf", "page_number": 7},))
+    labeled = case(
+        expected_entities=(), expected_sources=({"source_relpath": "books/reference.pdf", "page_number": 7},)
+    )
     for candidate in (
         chunk(source_relpath="other/reference.pdf", page_number=7),
         chunk(source_relpath="books/reference.pdf", page_number=8),
@@ -116,20 +127,34 @@ def test_modes_use_separate_queries_and_separate_aggregates():
 
 
 def payload():
-    return {"schema_version": 1, "cases": [{
-        "case_id": "gate42", "original_query": REQUEST.original_query,
-        "dense_query": REQUEST.dense_query, "sparse_query": REQUEST.sparse_query,
-        "expected_entities": ["Gate 42"], "expected_sources": [],
-    }]}
+    return {
+        "schema_version": 1,
+        "cases": [
+            {
+                "case_id": "gate42",
+                "original_query": REQUEST.original_query,
+                "dense_query": REQUEST.dense_query,
+                "sparse_query": REQUEST.sparse_query,
+                "expected_entities": ["Gate 42"],
+                "expected_sources": [],
+            }
+        ],
+    }
 
 
-@pytest.mark.parametrize("field,value", [
-    ("dense_query", ""), ("sparse_query", None), ("expected_entities", "Gate 42"),
-    ("expected_entities", [""]), ("expected_sources", [{"source_file": "/private/reference.pdf"}]),
-    ("expected_sources", [{"source_relpath": "../reference.pdf"}]),
-    ("expected_sources", [{"source_file": "reference.pdf", "page_number": True}]),
-    ("expected_sources", [{"source_path": "/private/reference.pdf"}]),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("dense_query", ""),
+        ("sparse_query", None),
+        ("expected_entities", "Gate 42"),
+        ("expected_entities", [""]),
+        ("expected_sources", [{"source_file": "/private/reference.pdf"}]),
+        ("expected_sources", [{"source_relpath": "../reference.pdf"}]),
+        ("expected_sources", [{"source_file": "reference.pdf", "page_number": True}]),
+        ("expected_sources", [{"source_path": "/private/reference.pdf"}]),
+    ],
+)
 def test_fixture_schema_errors_name_case(tmp_path, field, value):
     data = payload()
     data["cases"][0][field] = value
@@ -161,16 +186,28 @@ def test_committed_fixture_has_required_sanitized_coverage():
     cases = load_evaluation_cases(FIXTURE)
     assert 10 <= len(cases) <= 15
     entities = {entity for query in cases for entity in query.expected_entities}
-    assert {"Generator", "Sacral Authority", "Gate 42", "Channel 42-53", "Profile 4/6",
-            "Split Definition", "Solar Plexus", "Emotional Authority", "G", "Ego"} <= entities
+    assert {
+        "Generator",
+        "Sacral Authority",
+        "Gate 42",
+        "Channel 42-53",
+        "Profile 4/6",
+        "Split Definition",
+        "Solar Plexus",
+        "Emotional Authority",
+        "G",
+        "Ego",
+    } <= entities
     queries = " ".join(query.request.original_query for query in cases)
     assert all(term in queries for term in ("情緒權威", "42號閘門", "4/6人生角色"))
 
 
 def test_cli_injected_retrievers_never_open_storage_or_print_chunks(tmp_path, monkeypatch, capsys, cli):
     monkeypatch.chdir(tmp_path)
+
     def forbidden(*args, **kwargs):
         pytest.fail("offline CLI must not open storage or construct providers")
+
     monkeypatch.setattr(cli, "load_dense_retriever", forbidden)
     monkeypatch.setattr(cli, "load_bm25_retriever", forbidden)
     private_text = "Full synthetic passage that must not appear in output. Gate 42"
@@ -186,8 +223,10 @@ def test_cli_injected_retrievers_never_open_storage_or_print_chunks(tmp_path, mo
 @pytest.mark.parametrize("enabled,key", [(False, None), (True, None)])
 def test_cli_real_dense_gate_before_storage(tmp_path, monkeypatch, capsys, enabled, key, cli):
     monkeypatch.chdir(tmp_path)
+
     def forbidden(*args, **kwargs):
         pytest.fail("must gate real dense evaluation before opening any index")
+
     monkeypatch.setattr(cli, "load_dense_retriever", forbidden)
     monkeypatch.setattr(cli, "load_bm25_retriever", forbidden)
     settings = replace(load_config(env={}), real_embeddings=enabled, openai_api_key=key)
@@ -200,9 +239,11 @@ def test_cli_existing_loaders_receive_shared_identity(tmp_path, monkeypatch, cap
     settings = replace(load_config(env={}), index_dir=tmp_path, real_embeddings=True, openai_api_key="fake-key")
     monkeypatch.setattr(cli, "load_dense_retriever", lambda config: dense)
     calls = []
+
     def load_sparse(path, identity):
         calls.append((path, identity))
         return sparse
+
     monkeypatch.setattr(cli, "load_bm25_retriever", load_sparse)
     assert cli.main(["--queries", str(FIXTURE)], config=settings) == 1
     assert calls == [(tmp_path / "bm25", dense.ingestion_id)]
@@ -210,10 +251,15 @@ def test_cli_existing_loaders_receive_shared_identity(tmp_path, monkeypatch, cap
     assert "fake-key" not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("metric,minimum", [
-    ("hit_at_5", 0.8), ("mrr_at_20", 0.5),
-    ("exact_entity_hit_rate", 0.8), ("expected_source_page_hit_rate", 0.8),
-])
+@pytest.mark.parametrize(
+    "metric,minimum",
+    [
+        ("hit_at_5", 0.8),
+        ("mrr_at_20", 0.5),
+        ("exact_entity_hit_rate", 0.8),
+        ("expected_source_page_hit_rate", 0.8),
+    ],
+)
 def test_aggregate_threshold_boundaries(metric, minimum):
     strong = RetrievalMetrics(1, 1, 1, 1)
     assert evaluation.threshold_failures(replace(strong, **{metric: minimum})) == ()
@@ -227,14 +273,23 @@ def test_unlabeled_aggregate_metric_is_excluded_from_thresholds(metric):
     assert evaluation.threshold_failures(replace(aggregate, **{metric: 0})) == (metric,)
 
 
-@pytest.mark.parametrize("dense_text,sparse_text,exit_code,failed_modes", [
-    ("Gate 42", "Gate 42", 0, ()),
-    ("Unrelated synthetic passage", "Unrelated synthetic passage", 1, ("dense-only", "bm25-only", "rrf-hybrid")),
-    ("Gate 42", "Unrelated synthetic passage", 1, ("bm25-only",)),
-    ("Unrelated synthetic passage", "Gate 42", 1, ("dense-only",)),
-])
+@pytest.mark.parametrize(
+    "dense_text,sparse_text,exit_code,failed_modes",
+    [
+        ("Gate 42", "Gate 42", 0, ()),
+        ("Unrelated synthetic passage", "Unrelated synthetic passage", 1, ("dense-only", "bm25-only", "rrf-hybrid")),
+        ("Gate 42", "Unrelated synthetic passage", 1, ("bm25-only",)),
+        ("Unrelated synthetic passage", "Gate 42", 1, ("dense-only",)),
+    ],
+)
 def test_cli_threshold_exit_codes_and_independent_mode_failures(
-    tmp_path, capsys, cli, dense_text, sparse_text, exit_code, failed_modes,
+    tmp_path,
+    capsys,
+    cli,
+    dense_text,
+    sparse_text,
+    exit_code,
+    failed_modes,
 ):
     path = tmp_path / "queries.json"
     path.write_text(json.dumps(payload()))
@@ -280,6 +335,7 @@ def test_cli_invalid_input_still_returns_two_before_retrieval(tmp_path, capsys, 
 def test_cli_index_setup_error_still_returns_two(tmp_path, monkeypatch, capsys, cli):
     def broken_index(config):
         raise ValueError("Phase 3 index is missing")
+
     monkeypatch.setattr(cli, "load_dense_retriever", broken_index)
     settings = replace(load_config(env={}), index_dir=tmp_path, real_embeddings=True, openai_api_key="fake-key")
     assert cli.main(["--queries", str(FIXTURE)], config=settings) == 2

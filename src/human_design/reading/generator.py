@@ -104,8 +104,7 @@ def _parse_response(response: _Response) -> _AnswerPayload:
             raise ValueError("Incomplete response")
         if not isinstance(response.output_text, str):
             raise ValueError("Invalid output type")
-        payload = json.loads(response.output_text, object_pairs_hook=_unique_object,
-                             parse_constant=_invalid_constant)
+        payload = json.loads(response.output_text, object_pairs_hook=_unique_object, parse_constant=_invalid_constant)
         if not isinstance(payload, dict) or set(payload) != set(_SCHEMA["required"]):
             raise ValueError("Invalid fields")
         if not isinstance(payload["answer_markdown"], str) or not payload["answer_markdown"].strip():
@@ -115,8 +114,11 @@ def _parse_response(response: _Response) -> _AnswerPayload:
                 raise ValueError("Invalid field type")
     except Exception:
         # JSON/SDK errors can retain the complete private response in their text.
-        message = ("Generation response did not complete" if code == "incomplete_response"
-                   else "Generation returned invalid structured output")
+        message = (
+            "Generation response did not complete"
+            if code == "incomplete_response"
+            else "Generation returned invalid structured output"
+        )
         raise GenerationValidationError(message, code=code) from None
     return cast(_AnswerPayload, payload)
 
@@ -134,7 +136,10 @@ def _private_echo(value: str, context: PromptContext, config: AppConfig, rendere
 
 
 def _validated_answer(
-    payload: _AnswerPayload, context: PromptContext, config: AppConfig, rendered: str,
+    payload: _AnswerPayload,
+    context: PromptContext,
+    config: AppConfig,
+    rendered: str,
 ) -> AnswerResult:
     supplied_ids = {source.citation_id for source in context.sources}
     used_ids = set(payload["used_source_ids"])
@@ -146,11 +151,15 @@ def _validated_answer(
     answer = payload["answer_markdown"]
     cited_ids = _cited_ids(answer)
     if not cited_ids:
-        raise GenerationValidationError("Generation requires valid supplied bracket citations", code="missing_citations")
+        raise GenerationValidationError(
+            "Generation requires valid supplied bracket citations", code="missing_citations"
+        )
     if not cited_ids <= supplied_ids:
         raise GenerationValidationError("Generation referenced an unknown bracket citation", code="unknown_citation")
     if not cited_ids <= used_ids:
-        raise GenerationValidationError("Every bracket citation must be listed in used_source_ids", code="unlisted_citation")
+        raise GenerationValidationError(
+            "Every bracket citation must be listed in used_source_ids", code="unlisted_citation"
+        )
     if _private_echo(answer, context, config, rendered):
         raise GenerationValidationError("Generation returned private evidence or credentials", code="private_output")
 
@@ -168,7 +177,8 @@ def _validated_answer(
         warnings.append("Unused source IDs were omitted from public citations.")
     try:
         return AnswerResult(
-            status=AnswerStatus.OK, answer_markdown=answer,
+            status=AnswerStatus.OK,
+            answer_markdown=answer,
             citations=tuple(c for c in build_source_citations(context) if c.citation_id in cited_ids),
             chart_facts_used=tuple(f for f in context.chart_facts if f.source_path in used_paths),
             warnings=tuple(warnings),
@@ -180,7 +190,10 @@ def _validated_answer(
 
 
 def generate_answer(
-    prompt_context: PromptContext, config: AppConfig, *, client: _Client | None = None,
+    prompt_context: PromptContext,
+    config: AppConfig,
+    *,
+    client: _Client | None = None,
 ) -> AnswerResult:
     """Generate once, or return insufficient evidence before rendering/provider work.
 
@@ -190,8 +203,9 @@ def generate_answer(
     """
     validate_query(prompt_context.user_question)
     if not prompt_context.sources:
-        return AnswerResult(AnswerStatus.INSUFFICIENT_EVIDENCE,
-                            "There is insufficient retrieved evidence to answer this question.")
+        return AnswerResult(
+            AnswerStatus.INSUFFICIENT_EVIDENCE, "There is insufficient retrieved evidence to answer this question."
+        )
     _validate_config(config, client)
     rendered = render_reading_prompt(prompt_context)
     owned = client is None
@@ -201,13 +215,16 @@ def generate_answer(
 
             client = OpenAI(api_key=config.openai_api_key, max_retries=0)
         except Exception:
-            raise GenerationError("Unable to initialize the generation provider", code="provider_initialization") from None
+            raise GenerationError(
+                "Unable to initialize the generation provider", code="provider_initialization"
+            ) from None
     assert client is not None
     try:
         response = client.responses.create(
-            model=config.generation_model, input=rendered, store=False,
-            text={"format": {"type": "json_schema", "name": "human_design_answer",
-                             "strict": True, "schema": _SCHEMA}},
+            model=config.generation_model,
+            input=rendered,
+            store=False,
+            text={"format": {"type": "json_schema", "name": "human_design_answer", "strict": True, "schema": _SCHEMA}},
         )
     except Exception as exc:
         # SDK status_code is useful; message/body/code/param can contain private data.

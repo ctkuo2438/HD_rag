@@ -191,14 +191,10 @@ def _require_exact_keys(
 ) -> None:
     missing = expected - set(value)
     if missing:
-        raise ValueError(
-            f"{label} missing required fields: {', '.join(sorted(missing))}"
-        )
+        raise ValueError(f"{label} missing required fields: {', '.join(sorted(missing))}")
     extra = set(value) - expected
     if extra:
-        raise ValueError(
-            f"{label} contains unexpected fields"
-        )
+        raise ValueError(f"{label} contains unexpected fields")
 
 
 def _validate_golden_case(
@@ -240,21 +236,14 @@ def _validate_golden_case(
         f"golden labels cases[{index}].expected_validation_result",
     )
     if not isinstance(validation_result["is_valid"], bool):
-        raise ValueError(
-            f"golden labels cases[{index}].expected_validation_result.is_valid must be a bool"
-        )
+        raise ValueError(f"golden labels cases[{index}].expected_validation_result.is_valid must be a bool")
     warnings = validation_result["warnings"]
     if not isinstance(warnings, list):
-        raise ValueError(
-            f"golden labels cases[{index}].expected_validation_result.warnings must be a list"
-        )
+        raise ValueError(f"golden labels cases[{index}].expected_validation_result.warnings must be a list")
     # A golden warning may be a bare code string ("MISSING_ACTIVATION") or a
     # full warning object. Validate codes and canonical metadata at load time.
     for warning_index, warning_value in enumerate(warnings):
-        label = (
-            f"golden labels cases[{index}].expected_validation_result"
-            f".warnings[{warning_index}]"
-        )
+        label = f"golden labels cases[{index}].expected_validation_result.warnings[{warning_index}]"
         if not isinstance(warning_value, str):
             warning = _require_mapping(warning_value, label)
             _require_exact_keys(warning, _WARNING_FIELDS, label)

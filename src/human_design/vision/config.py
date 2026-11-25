@@ -12,9 +12,7 @@ from dotenv import load_dotenv
 
 _DEFAULT_MODEL = "gpt-5.5"
 _DEFAULT_REASONING_EFFORT = "high"
-_ALLOWED_REASONING_EFFORTS = frozenset(
-    {"none", "low", "medium", "high", "xhigh"}
-)
+_ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh"})
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 
@@ -38,7 +36,7 @@ def load_vision_config(
             dotenv_path=dotenv_path or Path(".env"),
             override=False,
         )
-        source = os.environ # process environment
+        source = os.environ  # process environment
     else:
         # testability: allow passing a custom env mapping for testing
         source = env
@@ -64,19 +62,14 @@ def _parse_real_api_enabled(value: str) -> bool:
         return True
     if normalized in _FALSE_VALUES:
         return False
-    raise ValueError(
-        "HD_VISION_REAL_API must be one of: 1, true, yes, on, "
-        "0, false, no, off"
-    )
+    raise ValueError("HD_VISION_REAL_API must be one of: 1, true, yes, on, 0, false, no, off")
 
 
 def _parse_reasoning_effort(value: str) -> str:
     normalized = value.strip().lower() or _DEFAULT_REASONING_EFFORT
     if normalized not in _ALLOWED_REASONING_EFFORTS:
         allowed_values = ", ".join(sorted(_ALLOWED_REASONING_EFFORTS))
-        raise ValueError(
-            f"HD_VISION_REASONING_EFFORT must be one of: {allowed_values}"
-        )
+        raise ValueError(f"HD_VISION_REASONING_EFFORT must be one of: {allowed_values}")
     return normalized
 
 

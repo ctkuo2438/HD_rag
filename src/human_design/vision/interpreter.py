@@ -238,9 +238,7 @@ def _derive_authority(
         return "Ego", ()
     if chart_type == "Projector" and "25-51" in active_channels:
         return "Ego-Projected", ()
-    if chart_type == "Projector" and _SELF_PROJECTED_CHANNELS.intersection(
-        active_channels
-    ):
+    if chart_type == "Projector" and _SELF_PROJECTED_CHANNELS.intersection(active_channels):
         return "Self-Projected", ()
     return "Needs Review", (_unsupported_authority_warning(),)
 

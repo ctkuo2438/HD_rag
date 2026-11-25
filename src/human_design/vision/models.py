@@ -300,9 +300,7 @@ class ValidationWarning:
         if self.severity is not severity:
             raise ValueError(f"severity must match canonical severity for {self.code}")
         if self.affects_validity is not affects_validity:
-            raise ValueError(
-                f"affects_validity must match canonical value for {self.code}"
-            )
+            raise ValueError(f"affects_validity must match canonical value for {self.code}")
 
 
 @dataclass(frozen=True)
@@ -372,9 +370,7 @@ def _validate_activation_column(
 
 def _validate_confidence_value(value: object, field_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
-        raise TypeError(
-            f"{field_name} must be a finite numeric confidence from 0.0 to 1.0"
-        )
+        raise TypeError(f"{field_name} must be a finite numeric confidence from 0.0 to 1.0")
 
     confidence = float(value)
     if not math.isfinite(confidence):
@@ -431,9 +427,7 @@ def _typed_tuple(
     try:
         tuple_values = tuple(values)
     except TypeError as exc:
-        raise TypeError(
-            f"{field_name} must be an iterable of {item_type.__name__}"
-        ) from exc
+        raise TypeError(f"{field_name} must be an iterable of {item_type.__name__}") from exc
 
     for value in tuple_values:
         if isinstance(value, bool) and item_type is int:

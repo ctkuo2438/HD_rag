@@ -121,9 +121,15 @@ class ChartContext:
         if len({fact.source_path for fact in facts}) != len(facts):
             raise ValueError("facts must have unique source_path values")
         object.__setattr__(self, "facts", facts)
-        object.__setattr__(self, "validation_warnings", _typed_tuple(
-            self.validation_warnings, str, "validation_warnings",
-        ))
+        object.__setattr__(
+            self,
+            "validation_warnings",
+            _typed_tuple(
+                self.validation_warnings,
+                str,
+                "validation_warnings",
+            ),
+        )
         _reject_absolute_paths(asdict(self))
 
 
@@ -155,9 +161,15 @@ class PromptContext:
     def __post_init__(self) -> None:
         if not isinstance(self.user_question, str):
             raise TypeError("user_question must be a string")
-        object.__setattr__(self, "chart_facts", _typed_tuple(
-            self.chart_facts, ChartFact, "chart_facts",
-        ))
+        object.__setattr__(
+            self,
+            "chart_facts",
+            _typed_tuple(
+                self.chart_facts,
+                ChartFact,
+                "chart_facts",
+            ),
+        )
         object.__setattr__(self, "sources", _typed_tuple(self.sources, PromptSource, "sources"))
         # Question/passage text is untrusted data, escaped by the renderer. The
         # typed ChartFact/PromptSource boundaries validate structured provenance.
@@ -184,8 +196,12 @@ class SourceCitation:
                 raise TypeError(f"{name} must be a string or None")
         if self.page_number is not None and type(self.page_number) is not int:
             raise TypeError("page_number must be an integer or None")
-        if (not self.source_file.strip() or self.source_file in {".", ".."}
-                or "/" in self.source_file or "\\" in self.source_file):
+        if (
+            not self.source_file.strip()
+            or self.source_file in {".", ".."}
+            or "/" in self.source_file
+            or "\\" in self.source_file
+        ):
             raise ValueError("source_file must be a safe basename")
         _reject_absolute_paths(asdict(self))
 
@@ -215,12 +231,24 @@ class AnswerResult:
         object.__setattr__(self, "status", AnswerStatus(self.status))
         if not isinstance(self.answer_markdown, str):
             raise TypeError("answer_markdown must be a string")
-        object.__setattr__(self, "citations", _typed_tuple(
-            self.citations, SourceCitation, "citations",
-        ))
-        object.__setattr__(self, "chart_facts_used", _typed_tuple(
-            self.chart_facts_used, ChartFact, "chart_facts_used",
-        ))
+        object.__setattr__(
+            self,
+            "citations",
+            _typed_tuple(
+                self.citations,
+                SourceCitation,
+                "citations",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "chart_facts_used",
+            _typed_tuple(
+                self.chart_facts_used,
+                ChartFact,
+                "chart_facts_used",
+            ),
+        )
         object.__setattr__(self, "warnings", _typed_tuple(self.warnings, str, "warnings"))
         path_check = asdict(self)
         path_check["answer_markdown"] = _markdown_path_check_text(self.answer_markdown)
@@ -247,6 +275,7 @@ def _markdown_path_check_text(text: str) -> str:
     drive colons and backslashes remain excluded from the word pattern.
     Public text is unchanged; structured provenance keeps the strict guard.
     """
+
     def unwrap(match: re.Match[str]) -> str:
         opening = match["opening"]
         if match["closing"] == _PROSE_QUOTE_PAIRS.get(opening, opening):
@@ -264,9 +293,12 @@ def _reject_absolute_paths(value: object, name: str = "context") -> None:
     """Reject filesystem provenance at prompt/public model boundaries on any OS."""
     if isinstance(value, str):
         normalized = value.strip()
-        if (PurePosixPath(normalized).is_absolute() or PureWindowsPath(normalized).anchor
-                or normalized.lower().startswith("file:")
-                or _ABSOLUTE_PATH_IN_TEXT.search(normalized)):
+        if (
+            PurePosixPath(normalized).is_absolute()
+            or PureWindowsPath(normalized).anchor
+            or normalized.lower().startswith("file:")
+            or _ABSOLUTE_PATH_IN_TEXT.search(normalized)
+        ):
             raise ValueError(f"{name} must not contain an absolute filesystem path")
     elif isinstance(value, Mapping):
         for key, item in value.items():

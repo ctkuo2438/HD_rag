@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
-from dotenv import dotenv_values # for loading .env files
+from dotenv import dotenv_values  # for loading .env files
 
 
 DEFAULT_PDF_DIR = Path("data/pdfs")
@@ -110,13 +110,7 @@ def _load_env_values(
     # Load values from .env first, if available.
     # Ignore keys whose value is None.
     if dotenv_path is not None and dotenv_path.exists():
-        values.update(
-            {
-                key: value
-                for key, value in dotenv_values(dotenv_path).items()
-                if value is not None
-            }
-        )  
+        values.update({key: value for key, value in dotenv_values(dotenv_path).items() if value is not None})
     # Then overlay environment values.
     # This makes env / os.environ override values from .env.
     values.update(os.environ if env is None else env)
@@ -124,12 +118,12 @@ def _load_env_values(
 
 
 def _get_int(values: Mapping[str, str], env_var: str, default: int) -> int:
-    raw_value = values.get(env_var) # ex: HD_RAG_CHUNK_SIZE = 1000, raw_value = "1000"
+    raw_value = values.get(env_var)  # ex: HD_RAG_CHUNK_SIZE = 1000, raw_value = "1000"
     if raw_value is None:
         return default
-    
+
     try:
-        return int(raw_value) # convert "1000" to 1000
+        return int(raw_value)  # convert "1000" to 1000
     except ValueError:
         raise ValueError(f"{env_var} must be an integer") from None
 

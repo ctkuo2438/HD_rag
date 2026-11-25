@@ -40,9 +40,7 @@ _REQUIRED_TOP_LEVEL_FIELDS = frozenset(
     }
 )
 
-_UNCERTAIN_ITEM_FIELDS = frozenset(
-    {"field_path", "observed_value", "reason", "confidence"}
-)
+_UNCERTAIN_ITEM_FIELDS = frozenset({"field_path", "observed_value", "reason", "confidence"})
 
 _FORBIDDEN_FINAL_CONCEPT_FIELDS = frozenset(
     {
@@ -74,9 +72,7 @@ def _center_key(value: str) -> str:
 
 
 _ALL_CHANNELS_SET = frozenset(ALL_CHANNELS)
-_REVERSED_CHANNELS = {
-    "-".join(reversed(channel.split("-"))): channel for channel in ALL_CHANNELS
-}
+_REVERSED_CHANNELS = {"-".join(reversed(channel.split("-"))): channel for channel in ALL_CHANNELS}
 _CANONICAL_CENTERS_SET = frozenset(CANONICAL_CENTERS)
 _CENTER_NAME_LOOKUP = {
     **{_center_key(center): center for center in CANONICAL_CENTERS},
@@ -136,30 +132,23 @@ def _parse_json_object(raw_json: str) -> Mapping[str, Any]:
 
 
 def _reject_nonstandard_json_constant(value: str) -> NoReturn:
-    raise BodyGraphParseError(
-        f"Invalid JSON: non-standard numeric constant {value}"
-    )
+    raise BodyGraphParseError(f"Invalid JSON: non-standard numeric constant {value}")
 
 
 def _validate_top_level_schema(payload: Mapping[str, Any]) -> None:
     forbidden = _FORBIDDEN_FINAL_CONCEPT_FIELDS & payload.keys()
     if forbidden:
         raise BodyGraphParseError(
-            "final Human Design concepts are not accepted from Vision output: "
-            + ", ".join(sorted(forbidden))
+            "final Human Design concepts are not accepted from Vision output: " + ", ".join(sorted(forbidden))
         )
 
     missing = _REQUIRED_TOP_LEVEL_FIELDS - payload.keys()
     if missing:
-        raise BodyGraphParseError(
-            f"Missing required top-level fields: {', '.join(sorted(missing))}"
-        )
+        raise BodyGraphParseError(f"Missing required top-level fields: {', '.join(sorted(missing))}")
 
     extras = payload.keys() - _REQUIRED_TOP_LEVEL_FIELDS
     if extras:
-        raise BodyGraphParseError(
-            f"Unexpected top-level raw Vision fields: {', '.join(sorted(extras))}"
-        )
+        raise BodyGraphParseError(f"Unexpected top-level raw Vision fields: {', '.join(sorted(extras))}")
 
 
 @overload
@@ -292,9 +281,7 @@ def _parse_visible_channels(
         canonical = _REVERSED_CHANNELS.get(channel)
         if canonical is not None:
             parsed.append(canonical)
-            warnings.append(
-                _parser_warning(ValidationCode.VISIBLE_CHANNEL_NORMALIZED, field_path)
-            )
+            warnings.append(_parser_warning(ValidationCode.VISIBLE_CHANNEL_NORMALIZED, field_path))
             continue
 
         warnings.append(_parser_warning(ValidationCode.INVALID_VISIBLE_CHANNEL, field_path))
@@ -346,15 +333,11 @@ def _parse_centers(
     for index, raw_center in enumerate(raw_centers):
         field_path = f"{field_name}[{index}]"
         if not isinstance(raw_center, str):
-            warnings.append(
-                _parser_warning(ValidationCode.INVALID_VISUAL_CENTER, field_path)
-            )
+            warnings.append(_parser_warning(ValidationCode.INVALID_VISUAL_CENTER, field_path))
             continue
         canonical = _CENTER_NAME_LOOKUP.get(_center_key(raw_center))
         if canonical is None or canonical not in _CANONICAL_CENTERS_SET:
-            warnings.append(
-                _parser_warning(ValidationCode.INVALID_VISUAL_CENTER, field_path)
-            )
+            warnings.append(_parser_warning(ValidationCode.INVALID_VISUAL_CENTER, field_path))
             continue
         parsed.append(canonical)
     return tuple(parsed)
@@ -374,16 +357,12 @@ def _parse_uncertain_items(
     for index, raw_item in enumerate(raw_items):
         field_path = f"uncertain_items[{index}]"
         if not isinstance(raw_item, dict) or raw_item.keys() != _UNCERTAIN_ITEM_FIELDS:
-            warnings.append(
-                _parser_warning(ValidationCode.INVALID_UNCERTAIN_ITEM, field_path)
-            )
+            warnings.append(_parser_warning(ValidationCode.INVALID_UNCERTAIN_ITEM, field_path))
             continue
         try:
             parsed.append(UncertainItem(**raw_item))
         except (TypeError, ValueError):
-            warnings.append(
-                _parser_warning(ValidationCode.INVALID_UNCERTAIN_ITEM, field_path)
-            )
+            warnings.append(_parser_warning(ValidationCode.INVALID_UNCERTAIN_ITEM, field_path))
     return tuple(parsed)
 
 
@@ -407,9 +386,7 @@ def _reject_extra_keys(
 ) -> None:
     extra_keys = set(value) - set(allowed_keys)
     if extra_keys:
-        raise BodyGraphParseError(
-            f"Unexpected fields at {field_path}: {', '.join(sorted(extra_keys))}"
-        )
+        raise BodyGraphParseError(f"Unexpected fields at {field_path}: {', '.join(sorted(extra_keys))}")
 
 
 __all__ = [
