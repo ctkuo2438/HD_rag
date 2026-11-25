@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 
 _DEFAULT_MODEL = "gpt-5.5"
@@ -30,13 +30,12 @@ def load_vision_config(
     *,
     dotenv_path: Path | None = None,
 ) -> VisionConfig:
-    # 1. load environment variables from .env file if env is None
+    source: Mapping[str, str]
     if env is None:
-        load_dotenv(
-            dotenv_path=dotenv_path or Path(".env"),
-            override=False,
-        )
-        source = os.environ  # process environment
+        # Read .env without load_dotenv, which would copy its values, including the
+        # API key, into os.environ for every library in the process.
+        file_values = dotenv_values(dotenv_path or Path(".env"))
+        source = {**{key: value for key, value in file_values.items() if value is not None}, **os.environ}
     else:
         # testability: allow passing a custom env mapping for testing
         source = env

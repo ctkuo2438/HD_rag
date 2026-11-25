@@ -126,16 +126,32 @@ def test_runtime_loads_values_from_explicit_dotenv_path(
     )
     _clear_vision_process_env(monkeypatch)
 
-    try:
-        config = load_vision_config(dotenv_path=dotenv_path)
+    config = load_vision_config(dotenv_path=dotenv_path)
 
-        assert config.model == "dotenv-model"
-        assert config.reasoning_effort == "xhigh"
-        assert config.real_api_enabled is True
-        assert config.openai_api_key == "fake-dotenv-key"
-    finally:
-        for name in VISION_ENV_VARS:
-            os.environ.pop(name, None)
+    assert config.model == "dotenv-model"
+    assert config.reasoning_effort == "xhigh"
+    assert config.real_api_enabled is True
+    assert config.openai_api_key == "fake-dotenv-key"
+
+
+def test_dotenv_values_do_not_leak_into_the_process_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("HD_VISION_MODEL=dotenv-model\nOPENAI_API_KEY=fake-dotenv-key\n", encoding="utf-8")
+    for name in VISION_ENV_VARS:
+        # setenv first so teardown restores "absent" even if the loader leaks a value.
+        monkeypatch.setenv(name, "placeholder")
+        monkeypatch.delenv(name)
+
+    config = load_vision_config(dotenv_path=dotenv_path)
+
+    assert config.model == "dotenv-model"
+    assert config.openai_api_key == "fake-dotenv-key"
+    # Loading config must not publish .env values, including the key, to other libraries.
+    assert "HD_VISION_MODEL" not in os.environ
+    assert "OPENAI_API_KEY" not in os.environ
 
 
 def test_process_environment_takes_precedence_over_dotenv(
@@ -168,9 +184,9 @@ def test_explicit_mapping_bypasses_dotenv(
     )
 
     def fail_if_called(*args: object, **kwargs: object) -> None:
-        raise AssertionError("load_dotenv must not be called for explicit mappings")
+        raise AssertionError(".env must not be read for explicit mappings")
 
-    monkeypatch.setattr(config_module, "load_dotenv", fail_if_called)
+    monkeypatch.setattr(config_module, "dotenv_values", fail_if_called)
 
     config = load_vision_config(
         {"HD_VISION_MODEL": "mapping-model", "HD_VISION_REAL_API": "0"},
