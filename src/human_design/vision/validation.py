@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from human_design.vision.constants import ALL_CHANNELS, PLANETARY_FIELDS
+from human_design.vision.constants import ALL_CHANNELS, PLANETARY_FIELDS, UNRESOLVED_BASIC_INFO_VALUES
 from human_design.vision.interpreter import BodyGraphInterpretationResult
 from human_design.vision.models import (
     DerivedChartData,
@@ -223,7 +223,7 @@ def _unsupported_authority_warnings(
     derived_chart_data: DerivedChartData,
     existing_warnings: Iterable[ValidationWarning],
 ) -> tuple[ValidationWarning, ...]:
-    if derived_chart_data.basic_info.authority not in {"Needs Review", "Unknown"}:
+    if derived_chart_data.basic_info.authority not in UNRESOLVED_BASIC_INFO_VALUES:
         return ()
     if any(
         warning.code is ValidationCode.UNSUPPORTED_AUTHORITY

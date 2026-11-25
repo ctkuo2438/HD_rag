@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from human_design.reading.chart_context import InvalidChartError, build_chart_context
+from human_design.reading.query_builder import build_retrieval_queries
 from human_design.vision.constants import ALL_CHANNELS, CANONICAL_CENTERS, PLANETARY_FIELDS
 from human_design.vision.interpreter import interpret_bodygraph
 from human_design.vision.models import BodyGraphExtractionResult, UncertainItem, ValidationResult
@@ -36,6 +37,28 @@ def test_basic_facts_preserve_exact_scalar_provenance(payload, field):
     assert fact.value == getattr(result.derived_chart_data.basic_info, field)
     assert fact.source_path == f"derived_chart_data.basic_info.{field}"
     assert build_chart_context(result) == context
+
+
+def test_unresolved_authority_is_not_projected_or_queried_as_a_fact(payload):
+    # Gates 24 and 61 define only Head and Ajna: a Projector whose Authority the rules cannot derive.
+    for column in ("personality", "design"):
+        for index, planet in enumerate(PLANETARY_FIELDS):
+            payload[column][planet] = f"{(24, 61)[index % 2]}.{index % 6 + 1}"
+    payload.update(visually_defined_centers=["Head", "Ajna"], visually_active_gates=[24, 61],
+                   visible_colored_channels=["24-61"], uncertain_items=[])
+    result = result_from_payload(payload)
+    assert result.validation_result.is_valid
+    assert result.derived_chart_data.basic_info.authority == "Needs Review"
+
+    context = build_chart_context(result)
+    basic = {f.field: f.value for f in context.facts if f.source_path.startswith("derived_chart_data.basic_info.")}
+    assert set(basic) == {"type", "profile", "strategy", "definition", "not_self_theme", "signature"}
+    assert basic["type"] == "Projector"
+    assert "UNSUPPORTED_AUTHORITY" in context.validation_warnings
+    for question in ("What is my authority?", "How should I make decisions?", "Tell me about my chart's energy."):
+        request, selected = build_retrieval_queries(question, context)
+        assert "Needs Review" not in request.dense_query + request.sparse_query
+        assert all(f.field != "authority" for f in selected)
 
 
 def test_individual_facts_follow_canonical_order_even_if_input_lists_do_not(payload):

@@ -45,7 +45,7 @@ Image -> Vision extraction -> strict parser
 
 The 13 Personality and 13 Design planetary activations determine active Gates. Active Channels require both canonical endpoint Gates; defined Centers come from those Channels. Python rules derive Type, Authority, Profile, Strategy, Definition, not-self theme and signature.
 
-Visual-only Gates, Channels and Centers cannot override derived facts. Canonical Center vocabulary includes `G` and `Ego`. Unsupported or incomplete information is reported conservatively, never invented. Invalid charts stop before retrieval; the reading adapter exposes deterministic facts and minimal safe warnings.
+Visual-only Gates, Channels and Centers cannot override derived facts. Canonical Center vocabulary includes `G` and `Ego`. Unsupported or incomplete information is reported conservatively, never invented. Invalid charts stop before retrieval; the reading adapter exposes deterministic facts and minimal safe warnings. Unresolved basic-info placeholders, such as a `Needs Review` Authority the rules cannot derive, are omitted from chart facts, so prompts and retrieval queries never treat them as real values.
 
 ## Focused Q&A
 

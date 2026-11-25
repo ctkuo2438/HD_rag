@@ -135,6 +135,9 @@ MOTOR_CENTERS: frozenset[str] = frozenset(
     {"Root", "Sacral", "Solar Plexus", "Ego"}
 )
 
+# Derived basic-info placeholders meaning the rules could not determine the value.
+UNRESOLVED_BASIC_INFO_VALUES: frozenset[str] = frozenset({"Needs Review", "Unknown"})
+
 __all__ = [
     "PLANETARY_FIELDS",
     "CANONICAL_CENTERS",
@@ -142,4 +145,5 @@ __all__ = [
     "ALL_CHANNELS",
     "CHANNEL_TO_CENTERS",
     "MOTOR_CENTERS",
+    "UNRESOLVED_BASIC_INFO_VALUES",
 ]
