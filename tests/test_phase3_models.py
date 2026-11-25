@@ -24,6 +24,7 @@ from human_design.reading.models import (
     PromptContext,
     PromptSource,
     SourceCitation,
+    UnsafeMarkdownError,
 )
 from human_design.vision.models import (
     BodyGraphExtractionResult,
@@ -372,6 +373,27 @@ def test_public_answer_still_rejects_real_paths_with_markdown(path: str, field_n
     with pytest.raises(ValueError, match="absolute filesystem path") as caught:
         AnswerResult(AnswerStatus.OK, **values)
     assert path not in str(caught.value)
+
+
+@pytest.mark.parametrize("unsafe", [
+    "![chart](https://attacker.invalid/leak.png)", "![chart](leak.png)", "[guide](guide.html)",
+    "![chart][ref]\n\n[ref]: https://attacker.invalid/leak.png", "[ref]: <leak.png>",
+    "<https://example.invalid/guide>", "<mailto:someone@example.invalid>",
+    "HTTPS://EXAMPLE.INVALID/guide", "ftp://example.invalid/guide", "www.example.invalid",
+])
+def test_public_answer_rejects_markdown_links_images_and_urls(unsafe: str) -> None:
+    with pytest.raises(UnsafeMarkdownError, match="links, images, or URLs") as caught:
+        AnswerResult(AnswerStatus.OK, f"Reflective explanation [S1].\n\n{unsafe}")
+    assert unsafe not in str(caught.value)
+
+
+@pytest.mark.parametrize("text", [
+    "Respond first [S1, S2]: then wait.", "[S1]: Projectors wait for the invitation.",
+    "Profile 1/3 [S1] (reflective).", "Notice your response! [S1]", "A [bracketed note] (aside) [S1].",
+    "Gate 5.2 and Channel 34-20 [S1].",
+])
+def test_public_answer_accepts_citation_prose_that_is_not_a_link(text: str) -> None:
+    assert AnswerResult(AnswerStatus.OK, text).answer_markdown == text
 
 
 def test_prose_normalization_does_not_relax_structured_provenance() -> None:

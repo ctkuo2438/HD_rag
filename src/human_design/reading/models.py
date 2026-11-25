@@ -25,6 +25,21 @@ _INLINE_PROSE_WORDS = re.compile(
     r"(?P<closing>\*{1,3}|_{1,3}|`+|[\"'”’」』])"
 )
 _PROSE_QUOTE_PAIRS = {"“": "”", "‘": "’", "「": "」", "『": "』"}
+# Rendered Markdown fetches images and follows links outside the citation UI, so
+# untrusted passages could steer an answer into leaking data through a URL. Answers
+# cite only by bracket ID. Inline images use "](" and reference images need a
+# definition, so these patterns cover images as well as links and URLs.
+_UNSAFE_MARKDOWN = re.compile(
+    r"\]\("  # inline link or image destination
+    r"|^ {0,3}\[[^\]\n]+\]:\s*\S+[ \t]*(?:[\"'(].*)?$"  # link reference definition
+    r"|<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>"  # autolink
+    r"|\b(?:https?|ftp)://|\bwww\.",  # bare URLs that GitHub-flavored Markdown links
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+class UnsafeMarkdownError(ValueError):
+    """Public answer Markdown contains a link, image, or URL; the text is never echoed."""
 
 
 @dataclass(frozen=True)
@@ -211,6 +226,8 @@ class AnswerResult:
         path_check["answer_markdown"] = _markdown_path_check_text(self.answer_markdown)
         path_check["warnings"] = [_markdown_path_check_text(warning) for warning in self.warnings]
         _reject_absolute_paths(path_check)
+        if _UNSAFE_MARKDOWN.search(self.answer_markdown):
+            raise UnsafeMarkdownError("answer_markdown must not contain links, images, or URLs")
 
 
 def _typed_tuple(values: Iterable[_T], item_type: type[_T], name: str) -> tuple[_T, ...]:

@@ -11,6 +11,7 @@ from human_design.reading.models import (
     AnswerResult,
     AnswerStatus,
     PromptContext,
+    UnsafeMarkdownError,
     _markdown_path_check_text,
     _reject_absolute_paths,
 )
@@ -63,7 +64,11 @@ _SCHEMA = {
     "required": ["answer_markdown", "used_source_ids", "used_chart_fact_paths", "limitations"],
     "additionalProperties": False,
 }
-_CITATION = re.compile(r"(?<!\\)\[(S[^\[\]\s]*)\]")
+# One bracket may group S-prefixed tokens with commas or semicolons, e.g. [S1, S2].
+_CITATION_GROUP = re.compile(r"(?<!\\)\[(S[^\[\]\s,;]*(?:\s*[,;]\s*S[^\[\]\s,;]*)*)\]")
+# Headings, page labels and short phrases repeated verbatim are not passage leaks,
+# and the prompt allows short quotations; only longer final passages are checked.
+_MIN_ECHOED_PASSAGE_CHARACTERS = 80
 
 
 def _validate_config(config: AppConfig, client: _Client | None) -> None:
@@ -116,9 +121,15 @@ def _parse_response(response: _Response) -> _AnswerPayload:
     return cast(_AnswerPayload, payload)
 
 
+def _cited_ids(answer: str) -> set[str]:
+    """Return every bracket-cited token, splitting grouped citations such as [S1, S2]."""
+    return {part.strip() for group in _CITATION_GROUP.findall(answer) for part in re.split(r"[,;]", group)}
+
+
 def _private_echo(value: str, context: PromptContext, config: AppConfig, rendered: str) -> bool:
     private_values = [config.openai_api_key, config.cohere_api_key, rendered]
-    private_values.extend(source.chunk.text for source in context.sources)
+    passages = (source.chunk.text.strip() for source in context.sources)
+    private_values.extend(text for text in passages if len(text) >= _MIN_ECHOED_PASSAGE_CHARACTERS)
     return any(private and private in value for private in private_values)
 
 
@@ -133,7 +144,7 @@ def _validated_answer(
     if not used_paths <= {fact.source_path for fact in context.chart_facts}:
         raise GenerationValidationError("Generation referenced an unsupplied chart fact", code="unknown_chart_fact")
     answer = payload["answer_markdown"]
-    cited_ids = set(_CITATION.findall(answer))
+    cited_ids = _cited_ids(answer)
     if not cited_ids:
         raise GenerationValidationError("Generation requires valid supplied bracket citations", code="missing_citations")
     if not cited_ids <= supplied_ids:
@@ -162,6 +173,8 @@ def _validated_answer(
             chart_facts_used=tuple(f for f in context.chart_facts if f.source_path in used_paths),
             warnings=tuple(warnings),
         )
+    except UnsafeMarkdownError:
+        raise GenerationValidationError("Generation returned links, images, or URLs", code="unsafe_markdown") from None
     except (TypeError, ValueError):
         raise GenerationValidationError("Generation returned unsafe public output", code="private_output") from None
 
