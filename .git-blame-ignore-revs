@@ -1,0 +1,4 @@
+# Formatting-only commits, skipped by `git blame` when blame.ignoreRevsFile
+# points here (GitHub applies this file automatically).
+# Configure Ruff formatting and reformat the codebase
+39b0fe4a685b27a793e8764613fec7eace0f2279

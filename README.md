@@ -220,9 +220,13 @@ env \
   HD_VISION_REAL_API=0 \
   uv run pytest
 uv run ruff check .
+uv run ruff format --check .
+PYRIGHT_PYTHON_IGNORE_WARNINGS=1 uv run pyright
 git diff --check
 git status --short
 ```
+
+Pyright runs on Node.js and uses an installed `node`; without one, its wrapper downloads Node on first use. `PYRIGHT_PYTHON_IGNORE_WARNINGS=1` skips the wrapper's online version check.
 
 To view the native web UI offline, use the same `env` prefix and replace `uv run pytest` with `uv run streamlit run scripts/streamlit_app.py`. Focused submissions then show safe configuration guidance.
 

@@ -36,6 +36,7 @@
 - For documentation-only changes, check accuracy, referenced paths, and whitespace; a full test run is unnecessary unless executable behavior changes.
 - Report what changed and which checks actually ran. Clearly distinguish verified results from assumptions or untested behavior.
 - Inspect `git status` and diffs before staging. Include only requested files; do not conceal unrelated artifacts by changing `.gitignore`.
+- Format with `uv run ruff format`. Ruff's banned-api rules enforce the core, CLI and provider boundaries above; fix the import instead of silencing the rule.
 
 Full offline verification:
 
@@ -50,6 +51,8 @@ env \
   HD_VISION_REAL_API=0 \
   uv run pytest
 uv run ruff check .
+uv run ruff format --check .
+PYRIGHT_PYTHON_IGNORE_WARNINGS=1 uv run pyright
 git diff --check
 git status --short
 ```
