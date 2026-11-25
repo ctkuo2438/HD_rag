@@ -226,6 +226,8 @@ git status --short
 
 To view the native web UI offline, use the same `env` prefix and replace `uv run pytest` with `uv run streamlit run scripts/streamlit_app.py`. Focused submissions then show safe configuration guidance.
 
+The default tests include an offline smoke check that runs the real pipeline and Streamlit app with fake providers. `uv run python scripts/smoke_offline.py --browser` also renders answers in headless Chrome. The [feature map](docs/verification.md) lists what each check verifies.
+
 For an intentional paid answer review, check relevance, groundedness, useful citations, clarity, and reflective framing. Chart facts should match the validated chart; book claims should be supported by the cited passages. Answers must not provide diagnoses, guarantees, or substitute for medical, legal or financial advice.
 
 See [development tools and contracts](docs/development.md) for further implementation and evaluation details.

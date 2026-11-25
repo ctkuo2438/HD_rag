@@ -102,6 +102,7 @@ Each CLI script owns its argument parsing. Look for `parser.add_argument(...)` b
 | Chart extraction | [extract_bodygraph.py](../scripts/extract_bodygraph.py) | `_build_parser()` |
 | Chart evaluation | [evaluate_bodygraph_extraction.py](../scripts/evaluate_bodygraph_extraction.py) | `_build_parser()` |
 | Retrieval evaluation | [evaluate_hybrid_retrieval.py](../scripts/evaluate_hybrid_retrieval.py) | `main()` |
+| Offline smoke check | [smoke_offline.py](../scripts/smoke_offline.py) | `main()`; `--browser`, `--work-dir` |
 
 `uv run --extra rerank` is parsed by uv and selects the optional dependency in [pyproject.toml](../pyproject.toml); it does not enable Cohere calls. Streamlit owns its launch options (`uv run streamlit run --help`); the app defines its form in `main()` without a project argument parser.
 
@@ -114,6 +115,7 @@ Use the [explicit offline verification command](../README.md#default-verificatio
 - Index build/reload: `test_ingestion.py`, `test_chunking.py`, `test_embeddings.py`, `test_hybrid_index.py`, `test_bm25.py`, `test_retriever.py`.
 - Charts: `test_bodygraph_parser.py`, `test_bodygraph_interpreter.py`, `test_bodygraph_validation.py`, `test_bodygraph_evaluation.py`, `test_extract_bodygraph.py`.
 - Answers/interfaces: `test_reading_pipeline.py`, `test_generation.py`, `test_ask_human_design.py`, `test_streamlit_app.py`.
+- End to end: `test_smoke_offline.py` runs the [offline smoke check](verification.md) over a synthetic index and the real app.
 
 For an extraction smoke test, use the same offline environment and replace `uv run pytest` with:
 
